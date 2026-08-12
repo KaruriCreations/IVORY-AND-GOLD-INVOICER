@@ -47,26 +47,28 @@ export default function LineItemRow({ item, onUpdate, onDelete, canDelete }) {
           onChange={(e) =>
             onUpdate(item.id, 'quantity', parseFloat(e.target.value) || 0)
           }
-          className="w-full bg-transparent border-b border-transparent focus:border-primary focus:outline-none transition-colors py-xs text-right qty-input font-mono"
+          className="w-full max-w-[90px] ml-auto bg-transparent border-b border-transparent focus:border-primary focus:outline-none transition-colors py-xs text-right qty-input font-mono"
         />
       </td>
-      <td className="py-sm px-md text-right relative">
-        <span className="absolute left-md top-1/2 -translate-y-1/2 text-on-surface-variant/50">
-          KSh
-        </span>
-        <input
-          type="number"
-          value={item.unitPrice || ''}
-          min="0"
-          step="0.01"
-          placeholder="e.g. 1200"
-          onChange={(e) =>
-            onUpdate(item.id, 'unitPrice', parseFloat(e.target.value) || 0)
-          }
-          className="w-full bg-transparent border-b border-transparent focus:border-primary focus:outline-none transition-colors py-xs pl-6 text-right price-input font-mono md:min-w-[120px]"
-        />
+      <td className="py-sm px-md text-right">
+        <div className="flex items-center justify-end gap-1.5 w-full">
+          <span className="text-on-surface-variant/50 font-mono text-sm select-none whitespace-nowrap">
+            KSh
+          </span>
+          <input
+            type="number"
+            value={item.unitPrice || ''}
+            min="0"
+            step="0.01"
+            placeholder="1,200"
+            onChange={(e) =>
+              onUpdate(item.id, 'unitPrice', parseFloat(e.target.value) || 0)
+            }
+            className="w-full max-w-[120px] bg-transparent border-b border-transparent focus:border-primary focus:outline-none transition-colors py-xs text-right price-input font-mono"
+          />
+        </div>
       </td>
-      <td className="py-sm px-md text-right font-label-md text-on-surface row-total font-mono">
+      <td className="py-sm px-md text-right font-label-md text-on-surface row-total font-mono whitespace-nowrap">
         {formatKSh(lineTotal)}
       </td>
       <td className="py-sm px-md text-center">

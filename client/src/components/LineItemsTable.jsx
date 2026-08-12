@@ -39,14 +39,14 @@ export default function LineItemsTable({
 
       {/* Table Container */}
       <div className="w-full overflow-x-auto overflow-y-hidden">
-        <table className="w-full min-w-[850px] text-left border-collapse">
+        <table className="w-full min-w-[900px] text-left border-collapse">
           <thead>
             <tr className="bg-[#C8D2F8] text-[#041627] font-label-md text-label-md border-b-2 border-black">
               <th className="py-sm px-md w-12 text-center font-bold"></th>
-              <th className="py-sm px-md w-1/2 font-bold">DESCRIPTION</th>
-              <th className="py-sm px-md w-32 text-right font-bold">QUANTITY</th>
-              <th className="py-sm px-md w-40 text-right font-bold">UNIT PRICE</th>
-              <th className="py-sm px-md w-40 text-right font-bold">TOTAL</th>
+              <th className="py-sm px-md min-w-[260px] font-bold">DESCRIPTION</th>
+              <th className="py-sm px-md w-32 min-w-[100px] text-right font-bold">QUANTITY</th>
+              <th className="py-sm px-md w-48 min-w-[170px] text-right font-bold whitespace-nowrap">UNIT PRICE</th>
+              <th className="py-sm px-md w-44 min-w-[130px] text-right font-bold">TOTAL</th>
               <th className="py-sm px-md w-16 text-center font-bold">ACT</th>
             </tr>
           </thead>
