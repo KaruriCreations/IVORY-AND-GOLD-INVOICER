@@ -166,33 +166,32 @@ export function useInvoice() {
     (format) => ({
       header: {
         ...header,
-        clientName: header.clientName.trim() || 'YAKUTI',
+        clientName: header.clientName.trim(),
         invoiceNum:
           header.invoiceNum.trim() || `QUO-${new Date().getFullYear()}-001`,
         date: header.date || new Date().toISOString().split('T')[0],
       },
       eventDetails: {
         ...eventDetails,
-        noOfGuests: eventDetails.noOfGuests.trim() || '400 Pax',
-        colors: eventDetails.colors.trim() || 'Gold, Orange & Aqua blue',
-        dateOfFunction:
-          eventDetails.dateOfFunction.trim() || '19th December, 2026',
-        eventType: eventDetails.eventType.trim() || 'Garden Wedding',
-        venue: eventDetails.venue.trim() || 'Karen',
-        attn: eventDetails.attn.trim() || 'Rosaline',
+        noOfGuests: eventDetails.noOfGuests.trim(),
+        colors: eventDetails.colors.trim(),
+        dateOfFunction: eventDetails.dateOfFunction.trim(),
+        eventType: eventDetails.eventType.trim(),
+        venue: eventDetails.venue.trim(),
+        attn: eventDetails.attn.trim(),
       },
       sections: sections.map((sec) => ({
         title: sec.title.trim() || 'CATEGORY',
         items: sec.items.map(({ description, quantity, unitPrice }) => ({
-          description: description.trim() || 'Item Description',
-          quantity: Math.max(1, Number(quantity) || 1),
-          unitPrice: Math.max(0, Number(unitPrice) || 0),
+          description: description.trim(),
+          quantity: Number(quantity) || 0,
+          unitPrice: Number(unitPrice) || 0,
         })),
       })),
       items: allItems.map(({ description, quantity, unitPrice }) => ({
-        description: description.trim() || 'Item Description',
-        quantity: Math.max(1, Number(quantity) || 1),
-        unitPrice: Math.max(0, Number(unitPrice) || 0),
+        description: description.trim(),
+        quantity: Number(quantity) || 0,
+        unitPrice: Number(unitPrice) || 0,
       })),
       taxRate: Math.max(0, Number(taxRate) || 0),
       notes: notes.trim(),

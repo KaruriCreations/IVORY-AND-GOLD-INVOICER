@@ -66,13 +66,13 @@ async function generate(invoiceData) {
   }
 
   // Extract meta fields with fallbacks
-  const clientName = header.clientName || 'YAKUTI';
-  const noOfGuests = eventDetails.noOfGuests || header.noOfGuests || '400 Pax';
-  const colors = eventDetails.colors || header.colors || 'Gold, Orange & Aqua blue';
-  const dateOfFunction = eventDetails.dateOfFunction || header.dateOfFunction || header.dueDate || '19th December, 2026';
-  const eventType = eventDetails.eventType || header.eventType || 'Garden Wedding';
-  const venue = eventDetails.venue || header.venue || 'Karen';
-  const attn = eventDetails.attn || header.preparedBy || header.attn || 'Rosaline';
+  const clientName = header.clientName || '';
+  const noOfGuests = eventDetails.noOfGuests || header.noOfGuests || '';
+  const colors = eventDetails.colors || header.colors || '';
+  const dateOfFunction = eventDetails.dateOfFunction || header.dateOfFunction || header.dueDate || '';
+  const eventType = eventDetails.eventType || header.eventType || '';
+  const venue = eventDetails.venue || header.venue || '';
+  const attn = eventDetails.attn || header.preparedBy || header.attn || '';
   const docDate = header.date || new Date().toLocaleDateString('en-GB');
 
   // -------------------------------------------------------------

@@ -107,7 +107,7 @@ export default function ClientDetails({
             verified
           </span>
           <span className="font-label-sm text-label-sm sm:font-label-md sm:text-label-md whitespace-nowrap">
-            Ivory & Gold Master v3.0
+            I&amp;G EVENTS
           </span>
         </div>
       </div>
