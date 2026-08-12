@@ -28,29 +28,41 @@ async function generate(invoiceData) {
       orientation: 'portrait',
       fitToPage: true,
       fitToWidth: 1,
-      fitToHeight: 0,
+      fitToHeight: 1,
+      horizontalCentered: true,
+      verticalCentered: false,
       margins: {
-        left: 0.4,
-        right: 0.4,
-        top: 0.5,
-        bottom: 0.5,
+        left: 0.35,
+        right: 0.35,
+        top: 0.4,
+        bottom: 0.4,
         header: 0.2,
         footer: 0.2,
       },
     },
-    views: [{ showGridLines: true }],
+    views: [
+      {
+        state: 'normal',
+        showGridLines: true,
+        activeCell: 'A1',
+        showRowColHeaders: false,
+      },
+    ],
   });
 
-  // Column definitions (A to E)
+  delete sheet.pageSetup.scale;
+  sheet.properties.pageSetUpPr = { fitToPage: true };
+
+  // Column definitions (A to E) totaling 82 units to fit A4 page width perfectly
   sheet.columns = [
-    { key: 'A', width: 14 }, // QUANTITY
-    { key: 'B', width: 28 }, // DESCRIPTION (left half)
-    { key: 'C', width: 28 }, // DESCRIPTION (right half)
-    { key: 'D', width: 16 }, // UNIT PRICE
-    { key: 'E', width: 18 }, // TOTAL
+    { key: 'A', width: 12 }, // QUANTITY
+    { key: 'B', width: 20 }, // DESCRIPTION (left half)
+    { key: 'C', width: 20 }, // DESCRIPTION (right half)
+    { key: 'D', width: 14 }, // UNIT PRICE
+    { key: 'E', width: 16 }, // TOTAL
   ];
 
-  const { header, items, taxRate = 0, eventDetails = {}, sections } = invoiceData;
+  const { header = {}, items, taxRate = 0, eventDetails = {}, sections } = invoiceData;
 
   // Normalize sections
   let normalizedSections = [];
@@ -104,8 +116,8 @@ async function generate(invoiceData) {
     });
 
     sheet.addImage(logoImage, {
-      tl: { col: 0.12, row: 2.15 },
-      ext: { width: 78, height: 78 },
+      tl: { col: 0.08, row: 2.1 },
+      ext: { width: 74, height: 74 },
       editAs: 'oneCell',
     });
   }
@@ -116,7 +128,7 @@ async function generate(invoiceData) {
   sheet.mergeCells('B3:C7');
   const nameCell = sheet.getCell('B3');
   nameCell.value = 'IVORY AND GOLD\nEVENTS';
-  nameCell.font = { bold: true, size: 15, color: { argb: COLOR_DARK_NAVY }, name: 'Arial' };
+  nameCell.font = { bold: true, size: 14, color: { argb: COLOR_DARK_NAVY }, name: 'Arial' };
   nameCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true, indent: 1 };
 
   // -------------------------------------------------------------
@@ -124,10 +136,10 @@ async function generate(invoiceData) {
   // -------------------------------------------------------------
   const contactLines = [
     { row: 3, text: 'IVORY AND GOLD EVENTS', bold: true, size: 9 },
-    { row: 4, text: 'P.O. Box 10668 - 00100, Nairobi - Kenya', bold: false, size: 8.5 },
-    { row: 5, text: 'Tel. +254 (0) 723657392, +254 (0) 725018909', bold: false, size: 8.5 },
-    { row: 6, text: 'Komarock, Nairobi', bold: false, size: 8.5 },
-    { row: 7, text: 'Email: ivoryandgoldeventske@gmail.com', bold: false, size: 8.5 },
+    { row: 4, text: 'P.O. Box 10668 - 00100, Nairobi - Kenya', bold: false, size: 8 },
+    { row: 5, text: 'Tel. +254 (0) 723657392, +254 (0) 725018909', bold: false, size: 8 },
+    { row: 6, text: 'Komarock, Nairobi', bold: false, size: 8 },
+    { row: 7, text: 'Email: ivoryandgoldeventske@gmail.com', bold: false, size: 8 },
   ];
 
   contactLines.forEach(({ row, text, bold, size }) => {
@@ -154,7 +166,7 @@ async function generate(invoiceData) {
   sheet.getRow(8).height = 22;
 
   // -------------------------------------------------------------
-  // 4. CLIENT & EVENT DETAILS (Rows 9-15)
+  // 5. CLIENT & EVENT DETAILS (Rows 9-15)
   // -------------------------------------------------------------
   const metaRows = [
     { row: 9, label: 'Client', val: clientName },
@@ -223,7 +235,7 @@ async function generate(invoiceData) {
   }
 
   // -------------------------------------------------------------
-  // 5. TABLE HEADERS (Row 16)
+  // 6. TABLE HEADERS (Row 16)
   // -------------------------------------------------------------
   sheet.getRow(16).height = 20;
 
@@ -248,16 +260,17 @@ async function generate(invoiceData) {
   }
 
   // -------------------------------------------------------------
-  // 6. DYNAMIC CATEGORY SECTIONS & LINE ITEMS (Row 17 onwards)
+  // 7. DYNAMIC CATEGORY SECTIONS & LINE ITEMS (Row 17 onwards)
   // -------------------------------------------------------------
   let currentRow = 17;
   const FIRST_DATA_ROW = 18;
+  const dataRowIndexes = [];
 
   normalizedSections.forEach((section) => {
     // Write Section Header Banner
     sheet.mergeCells(`A${currentRow}:E${currentRow}`);
     const secCell = sheet.getCell(`A${currentRow}`);
-    secCell.value = section.title.toUpperCase();
+    secCell.value = (section.title || 'CATEGORY').toUpperCase();
     secCell.font = { bold: true, size: 9.5, color: { argb: 'FF000000' }, name: 'Arial' };
     secCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_LIGHT_PERIWINKLE } };
     secCell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -265,7 +278,7 @@ async function generate(invoiceData) {
     applyBoxBorder(sheet, currentRow, currentRow, 1, 5, BORDER_SOLID_BLACK);
     currentRow++;
 
-    // Write Items for this section
+    // Write Items for this section (only actual user items, no fake 0 rows)
     (section.items || []).forEach((item) => {
       sheet.getRow(currentRow).height = 19;
 
@@ -303,35 +316,15 @@ async function generate(invoiceData) {
       qtyCell.border = { ...qtyCell.border, left: BORDER_SOLID_BLACK };
       totalCell.border = { ...totalCell.border, right: BORDER_SOLID_BLACK };
 
+      dataRowIndexes.push(currentRow);
       currentRow++;
     });
   });
 
-  // If table is short, add a few empty rows for aesthetic balance
-  const currentItemRows = currentRow - 17;
-  if (currentItemRows < 12) {
-    const extraNeeded = 12 - currentItemRows;
-    for (let k = 0; k < extraNeeded; k++) {
-      sheet.getRow(currentRow).height = 19;
-      sheet.getCell(`A${currentRow}`).border = { ...BORDER_THIN, left: BORDER_SOLID_BLACK };
-      sheet.mergeCells(`B${currentRow}:C${currentRow}`);
-      sheet.getCell(`B${currentRow}`).border = BORDER_THIN;
-      sheet.getCell(`C${currentRow}`).border = BORDER_THIN;
-      sheet.getCell(`D${currentRow}`).border = BORDER_THIN;
-      const blankTotal = sheet.getCell(`E${currentRow}`);
-      blankTotal.value = 0;
-      blankTotal.numFmt = '#,##0.00';
-      blankTotal.font = { size: 9, name: 'Arial' };
-      blankTotal.alignment = { horizontal: 'right', vertical: 'middle' };
-      blankTotal.border = { ...BORDER_THIN, right: BORDER_SOLID_BLACK };
-      currentRow++;
-    }
-  }
-
-  const LAST_DATA_ROW = currentRow - 1;
+  const LAST_DATA_ROW = currentRow > FIRST_DATA_ROW ? currentRow - 1 : FIRST_DATA_ROW;
 
   // -------------------------------------------------------------
-  // 7. TOTALS SECTION
+  // 8. TOTALS SECTION
   // -------------------------------------------------------------
   const subtotalRow = currentRow;
   sheet.getRow(subtotalRow).height = 20;
@@ -356,10 +349,14 @@ async function generate(invoiceData) {
   );
 
   const subVal = sheet.getCell(`E${subtotalRow}`);
-  subVal.value = {
-    formula: `SUM(E${FIRST_DATA_ROW}:E${LAST_DATA_ROW})`,
-    result: computedTotal,
-  };
+  if (dataRowIndexes.length > 0) {
+    subVal.value = {
+      formula: `SUM(E${FIRST_DATA_ROW}:E${LAST_DATA_ROW})`,
+      result: computedTotal,
+    };
+  } else {
+    subVal.value = 0;
+  }
   subVal.font = { bold: true, size: 9, name: 'Arial' };
   subVal.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_PERIWINKLE } };
   subVal.alignment = { horizontal: 'right', vertical: 'middle' };
@@ -394,7 +391,7 @@ async function generate(invoiceData) {
   grandVal.border = BORDER_SOLID_BLACK;
 
   // -------------------------------------------------------------
-  // 8. TERMS & CONDITIONS
+  // 9. TERMS & CONDITIONS
   // -------------------------------------------------------------
   const termsStartRow = totalRow + 2;
 
@@ -440,13 +437,8 @@ async function generate(invoiceData) {
     };
   }
 
-  for (let r = 3; r <= 7; r++) {
-    sheet.getRow(r).getCell(1).border = { ...sheet.getRow(r).getCell(1).border, left: BORDER_SOLID_BLACK };
-    sheet.getRow(r).getCell(5).border = { ...sheet.getRow(r).getCell(5).border, right: BORDER_SOLID_BLACK };
-  }
-  for (let c = 1; c <= 5; c++) {
-    sheet.getRow(3).getCell(c).border = { ...sheet.getRow(3).getCell(c).border, top: BORDER_SOLID_BLACK };
-  }
+  // Set explicit printable area to avoid viewport overflow
+  sheet.pageSetup.printArea = `A1:E${finalDocRow}`;
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);

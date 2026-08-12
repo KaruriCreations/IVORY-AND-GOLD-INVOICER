@@ -58,22 +58,8 @@ function buildSectionsHTML(sections) {
     .join('\n');
 }
 
-function buildFillerRows(count) {
-  const fillers = [];
-  for (let i = 0; i < count; i++) {
-    fillers.push(`
-      <tr>
-        <td class="col-qty">&nbsp;</td>
-        <td class="col-desc">&nbsp;</td>
-        <td class="col-price">&nbsp;</td>
-        <td class="col-total">0</td>
-      </tr>`);
-  }
-  return fillers.join('\n');
-}
-
 async function generate(invoiceData) {
-  const { header, items, taxRate = 0, eventDetails = {}, sections } = invoiceData;
+  const { header = {}, items, taxRate = 0, eventDetails = {}, sections } = invoiceData;
 
   // Normalize sections
   let normalizedSections = [];
@@ -108,9 +94,6 @@ async function generate(invoiceData) {
 
   let html = fs.readFileSync(TEMPLATE_PATH, 'utf-8');
 
-  const totalRowCount = allItems.length + normalizedSections.length;
-  const neededFillers = Math.max(0, 10 - totalRowCount);
-
   html = html
     .replace(/{{LOGO_SRC}}/g, logoSrc)
     .replace(/{{CLIENT_NAME}}/g, escapeHTML(clientName))
@@ -123,7 +106,7 @@ async function generate(invoiceData) {
     .replace(/{{DOC_DATE}}/g, escapeHTML(docDate))
     .replace(/<tr class="sec-header">[\s\S]*?<\/tr>\s*{{LINE_ITEMS}}/, buildSectionsHTML(normalizedSections))
     .replace(/{{LINE_ITEMS}}/g, buildSectionsHTML(normalizedSections))
-    .replace(/{{FILLER_ROWS}}/g, buildFillerRows(neededFillers))
+    .replace(/{{FILLER_ROWS}}/g, '')
     .replace(/{{SUBTOTAL}}/g, formatKSh(subtotal))
     .replace(/{{GRAND_TOTAL}}/g, formatKSh(grandTotal));
 
