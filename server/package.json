@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+    "build": "puppeteer browsers install chrome",
+    "postinstall": "puppeteer browsers install chrome",
     "create-template": "node src/scripts/createTemplate.js",
     "test": "jest"
   },
