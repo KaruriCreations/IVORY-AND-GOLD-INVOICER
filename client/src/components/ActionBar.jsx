@@ -1,17 +1,30 @@
 import { useState } from 'react';
 import { generateDocument } from '../services/api';
+import MagneticHoverButton from './ui/MagneticHoverButton';
+import useSparkleBurst from './ui/SparkleBurst';
+import { useToast } from './ui/Toast';
 
 export default function ActionBar({ getPayload }) {
   const [loading, setLoading] = useState(null); // 'xlsx' | 'pdf' | null
   const [error, setError] = useState('');
+  const { trigger: triggerSparkle, SparkleOverlay } = useSparkleBurst();
+  const toast = useToast();
 
-  const handleExport = async (format) => {
+  const handleExport = async (format, e) => {
     setError('');
     setLoading(format);
+    triggerSparkle(e);
     try {
       await generateDocument(getPayload, format);
+      if (format === 'pdf') {
+        toast.gold('PDF Generated Successfully', 'Your invoice PDF has been downloaded & archived to History.');
+      } else {
+        toast.success('Excel Spreadsheet Exported', 'Your branded .xlsx file is downloaded & ready.');
+      }
     } catch (err) {
-      setError(err.message || 'Generation failed. Please try again.');
+      const msg = err.message || 'Generation failed. Please try again.';
+      setError(msg);
+      toast.error('Export Failed', msg);
     } finally {
       setLoading(null);
     }
@@ -19,50 +32,50 @@ export default function ActionBar({ getPayload }) {
 
   return (
     <section className="mt-4 md:mt-xl flex flex-col md:flex-row justify-between items-center gap-4 py-4 border-t border-outline-variant/30 relative z-10">
+      <SparkleOverlay />
       <div className="flex items-center gap-2">
-        <span className="material-symbols-outlined text-primary-fixed-dim text-base">
-          info
+        <span className="material-symbols-outlined text-[#ffd700] text-lg animate-pulse">
+          verified
         </span>
         <p className="font-body-sm text-body-sm text-on-surface-variant">
           {error ? (
-            <span className="text-error">{error}</span>
+            <span className="text-error font-medium">{error}</span>
           ) : (
-            'Document auto-saves to Drafts. Ready to generate?'
+            'Document auto-saves to History. Ready to export & download?'
           )}
         </p>
       </div>
 
-      <div className="flex flex-col sm:flex-row w-full md:w-auto gap-2">
+      <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3">
         {/* Excel Button */}
-        <button
-          onClick={() => handleExport('xlsx')}
+        <MagneticHoverButton
+          onClick={(e) => handleExport('xlsx', e)}
           disabled={loading !== null}
-          className="flex items-center justify-center gap-2 font-label-md text-label-md text-on-primary bg-secondary hover:bg-secondary/90 px-4 py-2 rounded-xl transition-all shadow-sm hover:shadow-md active:scale-[0.98] group relative overflow-hidden disabled:opacity-60 disabled:cursor-not-allowed min-w-[140px]"
+          variant="secondary"
+          glowColor="rgba(111, 251, 190, 0.4)"
+          className="px-6 py-2.5 min-w-[160px] font-label-md text-label-md"
         >
-          <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
-          <span className="material-symbols-outlined relative z-10 text-base">
+          <span className="material-symbols-outlined text-lg">
             {loading === 'xlsx' ? 'hourglass_empty' : 'table_view'}
           </span>
-          <span className="relative z-10 text-base">
-            {loading === 'xlsx' ? 'Generating...' : 'Export .xlsx'}
-          </span>
-        </button>
+          <span>{loading === 'xlsx' ? 'Generating...' : 'Export .xlsx'}</span>
+        </MagneticHoverButton>
 
         {/* PDF Button */}
-        <button
-          onClick={() => handleExport('pdf')}
+        <MagneticHoverButton
+          onClick={(e) => handleExport('pdf', e)}
           disabled={loading !== null}
-          className="flex items-center justify-center gap-2 font-label-md text-label-md text-on-primary bg-primary hover:bg-primary-container hover:text-on-primary-container px-4 py-2 rounded-xl transition-all shadow-sm hover:shadow-md active:scale-[0.98] group relative overflow-hidden disabled:opacity-60 disabled:cursor-not-allowed min-w-[140px]"
+          variant="primary"
+          glowColor="rgba(212, 175, 55, 0.5)"
+          className="px-6 py-2.5 min-w-[160px] font-label-md text-label-md"
         >
-          <div className="absolute inset-0 bg-primary-fixed/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
-          <span className="material-symbols-outlined relative z-10 text-base">
+          <span className="material-symbols-outlined text-lg text-[#ffd700]">
             {loading === 'pdf' ? 'hourglass_empty' : 'picture_as_pdf'}
           </span>
-          <span className="relative z-10 text-base">
-            {loading === 'pdf' ? 'Rendering...' : 'Generate PDF'}
-          </span>
-        </button>
+          <span>{loading === 'pdf' ? 'Rendering...' : 'Generate PDF'}</span>
+        </MagneticHoverButton>
       </div>
     </section>
   );
 }
+

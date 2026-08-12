@@ -1,7 +1,13 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
+import AmbientLuxuryBackground from '../components/ui/AmbientLuxuryBackground';
+import InteractiveGlowCard from '../components/ui/InteractiveGlowCard';
+import MagneticHoverButton from '../components/ui/MagneticHoverButton';
+import SpotlightText from '../components/ui/SpotlightText';
+import useSparkleBurst from '../components/ui/SparkleBurst';
+import { useToast } from '../components/ui/Toast';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
@@ -12,6 +18,10 @@ export default function HistoryPage() {
   const [search, setSearch] = useState('');
   const [filterFormat, setFilterFormat] = useState('all');
   const [deletingFile, setDeletingFile] = useState(null);
+  const [loadingEdit, setLoadingEdit] = useState(null);
+  const navigate = useNavigate();
+  const { trigger: triggerSparkle, SparkleOverlay } = useSparkleBurst();
+  const toast = useToast();
 
   const fetchHistory = async () => {
     try {
@@ -33,7 +43,8 @@ export default function HistoryPage() {
     fetchHistory();
   }, []);
 
-  const handleDelete = async (filename) => {
+  const handleDelete = async (filename, e) => {
+    if (e) e.stopPropagation();
     if (!window.confirm(`Are you sure you want to delete "${filename}"?`)) return;
     try {
       setDeletingFile(filename);
@@ -42,10 +53,28 @@ export default function HistoryPage() {
       });
       if (!res.ok) throw new Error('Failed to delete file');
       setFiles((prev) => prev.filter((f) => f.name !== filename));
+      toast.info('Document Deleted', `Permanently removed "${filename}" from history.`);
     } catch (err) {
-      alert(err.message || 'Error deleting file');
+      toast.error('Delete Failed', err.message || 'Error deleting file');
     } finally {
       setDeletingFile(null);
+    }
+  };
+
+  const handleReEdit = async (filename, e) => {
+    triggerSparkle(e);
+    try {
+      setLoadingEdit(filename);
+      const res = await fetch(
+        `${API_BASE_URL}/api/history/metadata?filename=${encodeURIComponent(filename)}`
+      );
+      if (!res.ok) throw new Error('Could not load invoice data');
+      const json = await res.json();
+      navigate('/', { state: { invoiceData: json.data } });
+    } catch (err) {
+      alert(err.message || 'Failed to load invoice for editing');
+    } finally {
+      setLoadingEdit(null);
     }
   };
 
@@ -91,35 +120,41 @@ export default function HistoryPage() {
   return (
     <>
       <Header />
+      <AmbientLuxuryBackground />
+      <SparkleOverlay />
 
-      <main className="w-full pt-16 bg-surface min-h-screen">
+      <main className="w-full pt-16 bg-surface/50 min-h-screen relative z-10">
         <div className="flex flex-col w-full max-w-[1440px] mx-auto px-gutter md:px-lg py-xl gap-lg relative">
-          {/* Background decorative elements */}
-          <div className="absolute top-0 right-0 w-[800px] h-[600px] bg-gradient-to-bl from-primary-fixed-dim/20 to-transparent blur-[120px] rounded-full pointer-events-none -z-10"></div>
-          <div className="absolute bottom-20 left-10 w-[500px] h-[500px] bg-gradient-to-tr from-secondary-fixed-dim/10 to-transparent blur-[100px] rounded-full pointer-events-none -z-10"></div>
-
           {/* Header Card */}
-          <section className="bg-surface-container-lowest shadow-[0_4px_6px_-1px_rgba(26,43,60,0.05),0_2px_4px_-1px_rgba(26,43,60,0.03)] rounded-xl p-md md:p-lg transition-transform duration-300 hover:-translate-y-[2px] hover:shadow-[0_12px_24px_-4px_rgba(26,43,60,0.08)]">
+          <InteractiveGlowCard
+            enableTilt={false}
+            glowColor="rgba(212, 175, 55, 0.25)"
+            className="bg-surface-container-lowest/90 backdrop-blur-sm border border-outline-variant/30 shadow-[0_4px_20px_-2px_rgba(26,43,60,0.06)] rounded-xl p-md md:p-lg"
+          >
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-md">
               <div>
                 <h1 className="font-display-lg text-display-lg text-on-surface mb-xs">
-                  Document History
+                  <SpotlightText
+                    text="Document History"
+                    spotlightColor="rgba(212, 175, 55, 0.9)"
+                    baseClassName="text-on-surface"
+                  />
                 </h1>
                 <p className="font-body-md text-body-md text-on-surface-variant">
-                  Access, re-download, or manage all generated invoices and spreadsheets.
+                  Access, re-edit, re-download, or manage all generated invoices and spreadsheets.
                 </p>
               </div>
 
               <div className="flex items-center gap-sm flex-wrap">
-                <div className="bg-primary-container text-on-primary-container px-md py-sm rounded-full flex items-center gap-xs shadow-sm font-label-md text-label-md">
-                  <span className="material-symbols-outlined text-[18px]">folder</span>
+                <div className="bg-primary-container text-white px-md py-sm rounded-full flex items-center gap-xs shadow-sm font-label-md text-label-md border border-white/10">
+                  <span className="material-symbols-outlined text-[18px] text-[#ffd700]">folder</span>
                   <span>{stats.total} Total</span>
                 </div>
-                <div className="bg-primary/10 text-primary px-md py-sm rounded-full flex items-center gap-xs font-label-md text-label-md">
+                <div className="bg-primary/10 text-primary px-md py-sm rounded-full flex items-center gap-xs font-label-md text-label-md border border-primary/20">
                   <span className="material-symbols-outlined text-[18px]">picture_as_pdf</span>
                   <span>{stats.pdfCount} PDFs</span>
                 </div>
-                <div className="bg-secondary/10 text-secondary px-md py-sm rounded-full flex items-center gap-xs font-label-md text-label-md">
+                <div className="bg-secondary/10 text-secondary px-md py-sm rounded-full flex items-center gap-xs font-label-md text-label-md border border-secondary/20">
                   <span className="material-symbols-outlined text-[18px]">table_view</span>
                   <span>{stats.xlsxCount} Excel</span>
                 </div>
@@ -171,7 +206,7 @@ export default function HistoryPage() {
                 ))}
               </div>
             </div>
-          </section>
+          </InteractiveGlowCard>
 
           {/* Error Message */}
           {error && (
@@ -237,16 +272,18 @@ export default function HistoryPage() {
                 const isDeleting = deletingFile === file.name;
 
                 return (
-                  <div
+                  <InteractiveGlowCard
                     key={file.name}
-                    className={`bg-surface-container-lowest rounded-xl p-md border border-outline-variant/30 shadow-[0_2px_4px_rgba(26,43,60,0.04)] hover:shadow-[0_8px_16px_rgba(26,43,60,0.08)] hover:-translate-y-1 transition-all flex flex-col justify-between group relative overflow-hidden ${
+                    enableTilt={true}
+                    glowColor={isPdf ? 'rgba(212, 175, 55, 0.35)' : 'rgba(111, 251, 190, 0.35)'}
+                    className={`bg-surface-container-lowest/90 backdrop-blur-sm rounded-xl p-md border border-outline-variant/30 shadow-[0_4px_16px_rgba(26,43,60,0.05)] hover:shadow-[0_12px_28px_rgba(26,43,60,0.1)] transition-all flex flex-col justify-between group relative overflow-hidden ${
                       isDeleting ? 'opacity-40 pointer-events-none' : ''
                     }`}
                   >
                     {/* Top status bar accent */}
                     <div
-                      className={`absolute top-0 left-0 right-0 h-1 ${
-                        isPdf ? 'bg-primary' : 'bg-secondary'
+                      className={`absolute top-0 left-0 right-0 h-1.5 ${
+                        isPdf ? 'bg-gradient-to-r from-primary to-[#b89738]' : 'bg-gradient-to-r from-secondary to-[#6ffbbe]'
                       }`}
                     />
 
@@ -264,8 +301,8 @@ export default function HistoryPage() {
                           <span
                             className={`font-label-sm text-[11px] px-sm py-0.5 rounded-full uppercase tracking-wider font-bold ${
                               isPdf
-                                ? 'bg-primary/10 text-primary'
-                                : 'bg-secondary/10 text-secondary'
+                                ? 'bg-primary/10 text-primary border border-primary/20'
+                                : 'bg-secondary/10 text-secondary border border-secondary/20'
                             }`}
                           >
                             {isPdf ? 'PDF Document' : 'Excel Sheet'}
@@ -273,7 +310,7 @@ export default function HistoryPage() {
                         </div>
 
                         <button
-                          onClick={() => handleDelete(file.name)}
+                          onClick={(e) => handleDelete(file.name, e)}
                           aria-label="Delete document"
                           title="Delete file"
                           className="text-on-surface-variant/40 hover:text-error transition-colors p-xs rounded-full hover:bg-error-container/20 opacity-0 group-hover:opacity-100"
@@ -303,22 +340,36 @@ export default function HistoryPage() {
                       </div>
                     </div>
 
-                    {/* Action button */}
-                    <div className="pt-sm border-t border-outline-variant/20 flex items-center gap-sm">
+                    {/* Action buttons */}
+                    <div className="pt-sm border-t border-outline-variant/20 flex items-center gap-2">
+                      {file.hasMetadata && (
+                        <MagneticHoverButton
+                          onClick={(e) => handleReEdit(file.name, e)}
+                          disabled={loadingEdit === file.name}
+                          variant="outline"
+                          className="flex-1 py-2 text-xs font-semibold"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">
+                            {loadingEdit === file.name ? 'hourglass_empty' : 'edit_document'}
+                          </span>
+                          <span>{loadingEdit === file.name ? 'Loading...' : 'Re-Edit'}</span>
+                        </MagneticHoverButton>
+                      )}
                       <a
                         href={`${API_BASE_URL}/api/history/download?filename=${encodeURIComponent(file.name)}`}
                         download={file.name}
-                        className={`w-full flex items-center justify-center gap-xs font-label-md text-label-md py-sm rounded-lg transition-all active:scale-[0.98] ${
+                        onClick={(e) => triggerSparkle(e)}
+                        className={`flex-1 flex items-center justify-center gap-1 font-label-md text-xs font-semibold py-2 rounded-xl transition-all shadow-sm active:scale-[0.98] ${
                           isPdf
-                            ? 'bg-primary text-on-primary hover:bg-primary-container hover:text-on-primary-container'
-                            : 'bg-secondary text-on-primary hover:bg-secondary/90'
+                            ? 'bg-primary text-white hover:bg-primary-container'
+                            : 'bg-secondary text-white hover:bg-secondary/90'
                         }`}
                       >
-                        <span className="material-symbols-outlined text-[18px]">download</span>
+                        <span className="material-symbols-outlined text-[16px]">download</span>
                         <span>Download {isPdf ? '.pdf' : '.xlsx'}</span>
                       </a>
                     </div>
-                  </div>
+                  </InteractiveGlowCard>
                 );
               })}
             </section>

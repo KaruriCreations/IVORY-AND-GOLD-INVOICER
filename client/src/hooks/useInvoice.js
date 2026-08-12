@@ -43,6 +43,54 @@ export function useInvoice() {
   const [taxRate, setTaxRate] = useState(0); // Standard Kenyan quotation format
   const [notes, setNotes] = useState('');
 
+  // Bulk-load saved invoice data for re-editing
+  const loadInvoice = useCallback((data) => {
+    if (!data) return;
+
+    setHeader({
+      clientName: data.header?.clientName || '',
+      invoiceNum: data.header?.invoiceNum || '',
+      preparedBy: data.header?.preparedBy || '',
+      date: data.header?.date || new Date().toISOString().split('T')[0],
+      dueDate: data.header?.dueDate || '',
+    });
+
+    setEventDetails({
+      noOfGuests: data.eventDetails?.noOfGuests || '',
+      colors: data.eventDetails?.colors || '',
+      dateOfFunction: data.eventDetails?.dateOfFunction || '',
+      eventType: data.eventDetails?.eventType || '',
+      venue: data.eventDetails?.venue || '',
+      attn: data.eventDetails?.attn || '',
+      sectionTitle: data.eventDetails?.sectionTitle || '',
+    });
+
+    if (data.sections && data.sections.length > 0) {
+      // Assign fresh IDs to avoid counter collisions
+      let secId = nextSectionId;
+      let itmId = nextItemId;
+      const loadedSections = data.sections.map((sec) => {
+        const sectionId = secId++;
+        return {
+          id: sectionId,
+          title: sec.title || 'CATEGORY',
+          items: (sec.items || []).map((item) => ({
+            id: itmId++,
+            description: item.description || '',
+            quantity: Number(item.quantity) || 0,
+            unitPrice: Number(item.unitPrice) || 0,
+          })),
+        };
+      });
+      nextSectionId = secId;
+      nextItemId = itmId;
+      setSections(loadedSections);
+    }
+
+    setTaxRate(Number(data.taxRate) || 0);
+    setNotes(data.notes || '');
+  }, []);
+
   const updateHeader = useCallback((field, value) => {
     setHeader((prev) => ({ ...prev, [field]: value }));
   }, []);
@@ -220,5 +268,6 @@ export function useInvoice() {
     taxAmount,
     grandTotal,
     getPayload,
+    loadInvoice,
   };
 }

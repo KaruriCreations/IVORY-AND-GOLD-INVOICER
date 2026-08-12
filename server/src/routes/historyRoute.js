@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getHistoryList, deleteHistoryFile, HISTORY_DIR } = require('../services/historyService');
+const { getHistoryList, getInvoiceMetadata, deleteHistoryFile, HISTORY_DIR } = require('../services/historyService');
 const fs = require('fs');
 const path = require('path');
 
@@ -10,6 +10,22 @@ router.get('/', async (_req, res) => {
     const files = await getHistoryList();
     res.json({ success: true, files });
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+// GET /api/history/metadata?filename=...
+router.get('/metadata', async (req, res) => {
+  try {
+    const { filename } = req.query;
+    if (!filename) {
+      return res.status(400).json({ error: 'Filename required' });
+    }
+    const metadata = await getInvoiceMetadata(filename);
+    res.json({ success: true, data: metadata });
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      return res.status(404).json({ success: false, error: 'No metadata found for this file' });
+    }
     res.status(500).json({ success: false, error: err.message });
   }
 });

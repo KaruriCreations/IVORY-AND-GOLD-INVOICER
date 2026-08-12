@@ -20,15 +20,22 @@ async function saveInvoice(format, invoiceData, buffer) {
   const filePath = path.join(HISTORY_DIR, filename);
   await fs.writeFile(filePath, buffer);
 
+  // Save JSON sidecar with original form data for re-editing
+  const { format: _fmt, ...formData } = invoiceData;
+  const sidecarPath = `${filePath}.json`;
+  await fs.writeFile(sidecarPath, JSON.stringify(formData, null, 2), 'utf-8');
+
   return { filename, filePath };
 }
 
 async function getHistoryList() {
   await ensureHistoryDir();
 
-  const files = await fs.readdir(HISTORY_DIR);
+  const allFiles = await fs.readdir(HISTORY_DIR);
+  const sidecarSet = new Set(allFiles.filter((f) => f.endsWith('.json')));
+
   const fileItems = await Promise.all(
-    files.map(async (file) => {
+    allFiles.map(async (file) => {
       try {
         const fullPath = path.join(HISTORY_DIR, file);
         const stat = await fs.stat(fullPath);
@@ -43,6 +50,7 @@ async function getHistoryList() {
           size: stat.size,
           createdAt: stat.mtime.toISOString(),
           format: isPdf ? 'pdf' : 'xlsx',
+          hasMetadata: sidecarSet.has(`${file}.json`),
         };
       } catch {
         return null;
@@ -55,12 +63,27 @@ async function getHistoryList() {
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
+async function getInvoiceMetadata(filename) {
+  await ensureHistoryDir();
+  const safeFilename = path.basename(filename);
+  const sidecarPath = path.join(HISTORY_DIR, `${safeFilename}.json`);
+  const raw = await fs.readFile(sidecarPath, 'utf-8');
+  return JSON.parse(raw);
+}
+
 async function deleteHistoryFile(filename) {
   await ensureHistoryDir();
-  // Prevent directory traversal
   const safeFilename = path.basename(filename);
   const filePath = path.join(HISTORY_DIR, safeFilename);
   await fs.unlink(filePath);
+
+  // Also delete the JSON sidecar if it exists
+  const sidecarPath = `${filePath}.json`;
+  try {
+    await fs.unlink(sidecarPath);
+  } catch {
+    // Sidecar may not exist for older files — ignore
+  }
 }
 
-module.exports = { saveInvoice, getHistoryList, deleteHistoryFile, HISTORY_DIR };
+module.exports = { saveInvoice, getHistoryList, getInvoiceMetadata, deleteHistoryFile, HISTORY_DIR };

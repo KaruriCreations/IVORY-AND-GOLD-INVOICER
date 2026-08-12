@@ -24,14 +24,14 @@ describe('Generate Controller', () => {
   });
 
   describe('validation failure', () => {
-    test('returns 400 when clientName is missing', async () => {
+    test('returns 400 when format is invalid', async () => {
       req.body = {
         header: {
           invoiceNum: 'INV-001',
           date: '2024-01-15',
         },
         items: [{ description: 'Item 1', quantity: 1, unitPrice: 100 }],
-        format: 'xlsx',
+        format: 'invalid_format',
       };
 
       await handleGenerate(req, res, next);
@@ -40,19 +40,19 @@ describe('Generate Controller', () => {
       expect(res.json).toHaveBeenCalledWith({
         error: 'Validation Failed',
         details: expect.arrayContaining([
-          expect.stringMatching(/clientName/),
+          expect.stringMatching(/format/i),
         ]),
       });
     });
 
-    test('returns 400 when no items provided', async () => {
+    test('returns 400 when quantity is negative', async () => {
       req.body = {
         header: {
           clientName: 'Test Client',
           invoiceNum: 'INV-001',
           date: '2024-01-15',
         },
-        items: [],
+        items: [{ description: 'Item', quantity: -5, unitPrice: 100 }],
         format: 'xlsx',
       };
 
@@ -62,28 +62,7 @@ describe('Generate Controller', () => {
       expect(res.json).toHaveBeenCalledWith({
         error: 'Validation Failed',
         details: expect.arrayContaining([
-          expect.stringMatching(/items.*line|line.*item/i),
-        ]),
-      });
-    });
-
-    test('returns 400 when invoiceNum is missing', async () => {
-      req.body = {
-        header: {
-          clientName: 'Test Client',
-          date: '2024-01-15',
-        },
-        items: [{ description: 'Service', quantity: 1, unitPrice: 100 }],
-        format: 'xlsx',
-      };
-
-      await handleGenerate(req, res, next);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({
-        error: 'Validation Failed',
-        details: expect.arrayContaining([
-          expect.stringMatching(/invoiceNum/),
+          expect.stringMatching(/quantity/i),
         ]),
       });
     });
@@ -101,7 +80,7 @@ describe('Generate Controller', () => {
       items: [
         { description: 'Service', quantity: 10, unitPrice: 100 },
       ],
-      taxRate: 8.5,
+      taxRate: 0,
       notes: 'Test notes',
       format: 'xlsx',
     };
@@ -166,29 +145,6 @@ describe('Generate Controller', () => {
       await handleGenerate(req, res, next);
 
       expect(next).toHaveBeenCalledWith(expect.any(Error));
-    });
-  });
-
-  describe('tax rate default', () => {
-    test('uses default 8.5% tax rate when not specified in valid invoice', async () => {
-      const invoiceWithoutTax = {
-        header: {
-          clientName: 'Test',
-          invoiceNum: 'INV-002',
-          date: '2024-01-15',
-        },
-        items: [{ description: 'Service', quantity: 1, unitPrice: 100 }],
-        format: 'xlsx',
-      };
-
-      req.body = invoiceWithoutTax;
-      excelService.generate.mockResolvedValueOnce(Buffer.from('xlsx buffer'));
-
-      await handleGenerate(req, res, next);
-
-      expect(excelService.generate).toHaveBeenCalledWith(
-        expect.objectContaining({ taxRate: 8.5 })
-      );
     });
   });
 });

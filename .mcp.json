@@ -1,0 +1,38 @@
+{
+  "mcpServers": {
+    "21st": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://21st.dev/api/mcp",
+        "--header",
+        "x-api-key: 21st_sk_0abeb610a993cf0dc213041d9cfc542eabc277a1816e14960f478be28d9630f6"
+      ],
+      "env": {
+        "API_KEY": "21st_sk_0abeb610a993cf0dc213041d9cfc542eabc277a1816e14960f478be28d9630f6",
+        "X_API_KEY": "21st_sk_0abeb610a993cf0dc213041d9cfc542eabc277a1816e14960f478be28d9630f6"
+      }
+    },
+    "shadcn": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "shadcn-ui-mcp-server"
+      ]
+    },
+    "originkit": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.originkit.dev/vellumai",
+        "--header",
+        "Authorization: Bearer cmp_live_r7kObfQVj89r9B_SJrjBHBGiQaIdv9vt"
+      ],
+      "env": {
+        "ORIGINKIT_API_KEY": "cmp_live_r7kObfQVj89r9B_SJrjBHBGiQaIdv9vt"
+      }
+    }
+  }
+}

@@ -1,5 +1,10 @@
+import React, { useState } from 'react';
 import LineItemRow from './LineItemRow';
 import TotalsSummary from './TotalsSummary';
+import InteractiveGlowCard from './ui/InteractiveGlowCard';
+import MagneticHoverButton from './ui/MagneticHoverButton';
+import useSparkleBurst from './ui/SparkleBurst';
+import { useToast } from './ui/Toast';
 
 export default function LineItemsTable({
   sections,
@@ -15,26 +20,63 @@ export default function LineItemsTable({
   taxAmount,
   grandTotal,
 }) {
+  const { trigger: triggerSparkle, SparkleOverlay } = useSparkleBurst();
+  const toast = useToast();
+
+  const handleAddSection = (e) => {
+    triggerSparkle(e);
+    addSection('NEW CATEGORY');
+    toast.gold('Category Section Added', 'Customize the title and add event line items.');
+  };
+
+  const handleRemoveSection = (sectionId, title) => {
+    removeSection(sectionId);
+    toast.info('Category Removed', `Deleted section "${title || 'Category'}".`);
+  };
+
+  const handleAddItem = (sectionId, sectionTitle) => {
+    addItem(sectionId);
+    toast.success('Line Item Added', `Added item to ${sectionTitle || 'category'}.`);
+  };
+
+  const handleRemoveItem = (sectionId, itemId) => {
+    removeItem(sectionId, itemId);
+    toast.info('Item Removed', 'Deleted line item from table.');
+  };
+
   return (
-    <section className="bg-surface-container-lowest shadow-[0_4px_6px_-1px_rgba(26,43,60,0.05),0_2px_4px_-1px_rgba(26,43,60,0.03)] rounded-xl overflow-hidden flex flex-col transition-transform duration-300 hover:-translate-y-[2px] hover:shadow-[0_12px_24px_-4px_rgba(26,43,60,0.08)]">
+    <InteractiveGlowCard
+      enableTilt={false}
+      glowColor="rgba(200, 210, 248, 0.3)"
+      className="bg-surface-container-lowest/90 backdrop-blur-sm border border-outline-variant/30 shadow-[0_4px_20px_-2px_rgba(26,43,60,0.06)] rounded-xl overflow-hidden flex flex-col"
+    >
+      <SparkleOverlay />
       <div className="p-md md:p-lg border-b border-outline-variant/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-sm bg-surface-container-low/50">
-        <h2 className="font-headline-md text-headline-md text-on-surface flex items-center gap-sm">
-          <span className="material-symbols-outlined text-primary">
+        <div className="flex items-center gap-sm">
+          <span className="material-symbols-outlined text-primary text-[28px]">
             receipt_long
           </span>
-          Line Items &amp; Categories
-        </h2>
+          <div>
+            <h2 className="font-headline-md text-headline-md text-on-surface">
+              Line Items &amp; Categories
+            </h2>
+            <p className="font-body-sm text-xs text-on-surface-variant">
+              Group your quotation into clear sections. Click any category to expand or collapse.
+            </p>
+          </div>
+        </div>
 
         {/* Add Category Section Button */}
-        <button
-          onClick={() => addSection('NEW CATEGORY')}
-          className="flex items-center gap-xs font-label-md text-label-md text-primary hover:text-primary-container bg-primary/10 hover:bg-primary/20 px-md py-sm rounded-lg transition-all active:scale-[0.98] shadow-sm"
+        <MagneticHoverButton
+          onClick={handleAddSection}
+          variant="outline"
+          className="px-md py-sm rounded-xl font-label-md text-label-md text-primary bg-primary/5 hover:bg-primary/10 border-primary/20"
         >
           <span className="material-symbols-outlined text-[18px]">
             create_new_folder
           </span>
           <span>Add Category Section</span>
-        </button>
+        </MagneticHoverButton>
       </div>
 
       {/* Table Container */}
@@ -43,14 +85,14 @@ export default function LineItemsTable({
           <thead>
             <tr className="bg-[#C8D2F8] text-[#041627] font-label-md text-label-md border-b-2 border-black">
               <th className="py-sm px-md w-12 text-center font-bold"></th>
-              <th className="py-sm px-md min-w-[260px] font-bold">DESCRIPTION</th>
-              <th className="py-sm px-md w-32 min-w-[100px] text-right font-bold">QUANTITY</th>
-              <th className="py-sm px-md w-48 min-w-[170px] text-right font-bold whitespace-nowrap">UNIT PRICE</th>
-              <th className="py-sm px-md w-44 min-w-[130px] text-right font-bold">TOTAL</th>
-              <th className="py-sm px-md w-16 text-center font-bold">ACT</th>
+              <th className="py-sm px-md min-w-[280px] font-bold">DESCRIPTION</th>
+              <th className="py-sm px-md w-28 text-center font-bold">QUANTITY</th>
+              <th className="py-sm px-md w-36 text-right font-bold">UNIT PRICE (KES)</th>
+              <th className="py-sm px-md w-40 text-right font-bold">TOTAL (KES)</th>
+              <th className="py-sm px-md w-16 text-center font-bold"></th>
             </tr>
           </thead>
-          <tbody className="font-body-md text-body-md text-on-surface">
+          <tbody>
             {sections.map((section, secIdx) => (
               <SectionBlock
                 key={section.id}
@@ -58,9 +100,9 @@ export default function LineItemsTable({
                 secIdx={secIdx}
                 totalSections={sections.length}
                 updateSectionTitle={updateSectionTitle}
-                removeSection={removeSection}
-                addItem={addItem}
-                removeItem={removeItem}
+                removeSection={() => handleRemoveSection(section.id, section.title)}
+                addItem={() => handleAddItem(section.id, section.title)}
+                removeItem={(itemId) => handleRemoveItem(section.id, itemId)}
                 updateItem={updateItem}
               />
             ))}
@@ -78,7 +120,7 @@ export default function LineItemsTable({
       <div className="flex flex-col lg:flex-row justify-between items-start p-md md:p-lg bg-surface-container-low/30 gap-lg border-t border-outline-variant/30">
         <div className="flex flex-col gap-sm">
           <p className="font-body-sm text-body-sm text-on-surface-variant max-w-sm">
-            💡 <strong>Tip:</strong> Click on any category banner to rename it (e.g. <em>CATERING</em>, <em>DECOR</em>, <em>ENTERTAINMENT</em>). You can add as many sections and rows as needed.
+            💡 <strong>Tip:</strong> Click on any category banner to rename it. You can collapse/expand sections to focus on specific deliverables.
           </p>
         </div>
 
@@ -91,7 +133,7 @@ export default function LineItemsTable({
           grandTotal={grandTotal}
         />
       </div>
-    </section>
+    </InteractiveGlowCard>
   );
 }
 
@@ -105,27 +147,56 @@ function SectionBlock({
   removeItem,
   updateItem,
 }) {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  // Compute section subtotal
+  const sectionTotal = section.items.reduce((sum, item) => {
+    const qty = parseFloat(item.quantity) || 0;
+    const price = parseFloat(item.unitPrice) || 0;
+    return sum + qty * price;
+  }, 0);
+
   return (
     <>
       {/* Category Section Header Row */}
       <tr className="bg-[#E0E7FD] border-y-2 border-black group">
         <td colSpan={5} className="py-2 px-md">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-sm flex-1">
-              <span className="material-symbols-outlined text-primary text-[20px]">
-                folder_open
-              </span>
+            <div className="flex items-center gap-sm flex-1 mr-4">
+              {/* Accordion Collapse Toggle */}
+              <button
+                type="button"
+                onClick={() => setIsCollapsed(!isCollapsed)}
+                className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-black/10 text-primary transition-colors shrink-0"
+                title={isCollapsed ? 'Expand section' : 'Collapse section'}
+              >
+                <span className="material-symbols-outlined text-[20px] transition-transform duration-200" style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>
+                  expand_more
+                </span>
+              </button>
+
               <input
                 type="text"
                 value={section.title}
                 onChange={(e) => updateSectionTitle(section.id, e.target.value.toUpperCase())}
                 placeholder="e.g. CATERING, DECOR, ENTERTAINMENT"
-                className="bg-transparent font-bold text-center text-primary text-sm tracking-wider w-full uppercase focus:outline-none focus:bg-white/60 px-2 py-1 rounded transition-colors"
+                className="bg-transparent font-bold text-left sm:text-center text-primary text-sm tracking-wider w-full max-w-md uppercase focus:outline-none focus:bg-white/60 px-2 py-1 rounded transition-colors"
               />
+
+              {/* Collapsed Pill Preview */}
+              {isCollapsed && (
+                <span className="hidden sm:inline-flex items-center gap-2 px-3 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                  <span>{section.items.length} {section.items.length === 1 ? 'Item' : 'Items'}</span>
+                  <span>•</span>
+                  <span>KES {sectionTotal.toLocaleString('en-US')}</span>
+                </span>
+              )}
             </div>
-            <div className="flex items-center gap-xs">
+
+            <div className="flex items-center gap-xs shrink-0">
               <button
-                onClick={() => addItem(section.id)}
+                type="button"
+                onClick={addItem}
                 title="Add Item to this Category"
                 className="flex items-center gap-1 text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 px-2.5 py-1 rounded-md transition-colors"
               >
@@ -134,7 +205,8 @@ function SectionBlock({
               </button>
               {totalSections > 1 && (
                 <button
-                  onClick={() => removeSection(section.id)}
+                  type="button"
+                  onClick={removeSection}
                   title="Delete this Category Section"
                   className="text-on-surface-variant/50 hover:text-error transition-colors p-1 rounded-full hover:bg-error-container/20"
                 >
@@ -149,18 +221,19 @@ function SectionBlock({
         <td className="text-center py-2 px-md"></td>
       </tr>
 
-      {/* Line Items for this Category */}
-      {section.items.map((item) => (
-        <LineItemRow
-          key={item.id}
-          item={item}
-          onUpdate={(itemId, field, val) =>
-            updateItem(section.id, itemId, field, val)
-          }
-          onDelete={(itemId) => removeItem(section.id, itemId)}
-          canDelete={section.items.length > 1 || totalSections > 1}
-        />
-      ))}
+      {/* Line Items for this Category (Collapsible) */}
+      {!isCollapsed &&
+        section.items.map((item) => (
+          <LineItemRow
+            key={item.id}
+            item={item}
+            onUpdate={(itemId, field, val) =>
+              updateItem(section.id, itemId, field, val)
+            }
+            onDelete={(itemId) => removeItem(itemId)}
+            canDelete={section.items.length > 1 || totalSections > 1}
+          />
+        ))}
     </>
   );
 }

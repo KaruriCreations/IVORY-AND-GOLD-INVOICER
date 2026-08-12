@@ -9,6 +9,12 @@ describe('Invoice Payload Validation', () => {
       date: '2026-08-11',
       dueDate: '2026-08-25',
     },
+    sections: [
+      {
+        title: 'CATERING',
+        items: [{ description: 'Item 1', quantity: 2, unitPrice: 150 }],
+      },
+    ],
     items: [
       { description: 'Item 1', quantity: 2, unitPrice: 150 },
     ],
@@ -23,44 +29,26 @@ describe('Invoice Payload Validation', () => {
     expect(result.data.format).toBe('xlsx');
   });
 
-  test('defaults taxRate to 8.5 when taxRate is omitted', () => {
+  test('defaults taxRate to 0 when taxRate is omitted', () => {
     const { taxRate, ...withoutTax } = baseValidPayload;
     const result = validateInvoice(withoutTax);
     expect(result.valid).toBe(true);
-    expect(result.data.taxRate).toBe(8.5);
+    expect(result.data.taxRate).toBe(0);
   });
 
-  test('rejects missing clientName', () => {
+  test('accepts empty strings for optional header fields', () => {
     const payload = {
       ...baseValidPayload,
-      header: { ...baseValidPayload.header, clientName: '' },
+      header: { clientName: '', invoiceNum: '' },
     };
     const result = validateInvoice(payload);
-    expect(result.valid).toBe(false);
-    expect(result.details.some((d) => d.includes('clientName'))).toBe(true);
+    expect(result.valid).toBe(true);
   });
 
-  test('rejects missing invoiceNum', () => {
+  test('rejects negative quantity', () => {
     const payload = {
       ...baseValidPayload,
-      header: { ...baseValidPayload.header, invoiceNum: '' },
-    };
-    const result = validateInvoice(payload);
-    expect(result.valid).toBe(false);
-    expect(result.details.some((d) => d.includes('invoiceNum'))).toBe(true);
-  });
-
-  test('rejects empty items array', () => {
-    const payload = { ...baseValidPayload, items: [] };
-    const result = validateInvoice(payload);
-    expect(result.valid).toBe(false);
-    expect(result.details.some((d) => d.includes('items'))).toBe(true);
-  });
-
-  test('rejects non-positive quantity', () => {
-    const payload = {
-      ...baseValidPayload,
-      items: [{ description: 'Test', quantity: 0, unitPrice: 10 }],
+      items: [{ description: 'Test', quantity: -2, unitPrice: 10 }],
     };
     const result = validateInvoice(payload);
     expect(result.valid).toBe(false);
