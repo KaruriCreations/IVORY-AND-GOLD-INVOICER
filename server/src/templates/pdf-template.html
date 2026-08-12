@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Arial', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: #000;
+    font-size: 11px;
+    line-height: 1.4;
+    background: #fff;
+  }
+  .quote-container {
+    max-width: 800px;
+    margin: 0 auto;
+    border: 1.5px solid #000;
+  }
+  /* Top Header */
+  .top-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 18px;
+    border-bottom: 1.5px solid #000;
+  }
+  .header-brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .header-logo {
+    height: 52px;
+    width: auto;
+    object-contain: fit;
+  }
+  .company-title {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    line-height: 1.2;
+    color: #041627;
+  }
+  .contact-info {
+    text-align: right;
+    font-size: 10px;
+    color: #333;
+    line-height: 1.35;
+  }
+  .contact-info .main-name {
+    font-weight: 700;
+    font-size: 10.5px;
+    color: #000;
+  }
+  /* Quotation Banner */
+  .quote-banner {
+    background-color: #C8D2F8;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 6px 0;
+    letter-spacing: 1px;
+    border-bottom: 1.5px solid #000;
+  }
+  /* Event Meta Grid */
+  .meta-grid {
+    display: grid;
+    grid-template-columns: 140px 1fr 180px;
+    border-bottom: 1.5px solid #000;
+  }
+  .meta-row {
+    display: contents;
+  }
+  .meta-label {
+    font-weight: 700;
+    font-size: 10px;
+    padding: 4px 10px;
+    border-bottom: 1px solid #777;
+    border-right: 1.5px solid #000;
+  }
+  .meta-val {
+    font-size: 10px;
+    padding: 4px 10px;
+    border-bottom: 1px solid #777;
+    border-right: 1.5px solid #000;
+  }
+  .meta-right {
+    font-size: 10px;
+    padding: 4px 10px;
+    text-align: right;
+    border-bottom: 1px solid #777;
+  }
+  .meta-row:last-child .meta-label,
+  .meta-row:last-child .meta-val,
+  .meta-row:last-child .meta-right {
+    border-bottom: none;
+  }
+  /* Table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  thead th {
+    background-color: #C8D2F8;
+    color: #000;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 6px 8px;
+    text-align: center;
+    border: 1.5px solid #000;
+    border-top: none;
+  }
+  .sec-header td {
+    background-color: #E0E7FD;
+    text-align: center;
+    font-weight: 700;
+    font-size: 10.5px;
+    padding: 4px 0;
+    border: 1.5px solid #000;
+  }
+  tbody td {
+    padding: 4px 8px;
+    border: 1px solid #777;
+    font-size: 10px;
+  }
+  .col-qty { width: 90px; text-align: center; border-left: 1.5px solid #000 !important; }
+  .col-desc { text-align: left; }
+  .col-price { width: 120px; text-align: right; }
+  .col-total { width: 130px; text-align: right; font-weight: 600; border-right: 1.5px solid #000 !important; }
+  /* Totals */
+  .total-row td {
+    border-top: 1.5px solid #000;
+    border-bottom: 1.5px solid #000;
+  }
+  .total-label {
+    background-color: #C8D2F8;
+    font-weight: 700;
+    font-size: 10.5px;
+    padding: 5px 8px;
+    text-align: left;
+    border: 1.5px solid #000 !important;
+  }
+  .total-val {
+    background-color: #C8D2F8;
+    font-weight: 700;
+    font-size: 11px;
+    padding: 5px 8px;
+    text-align: right;
+    border: 1.5px solid #000 !important;
+  }
+  .grand-row td {
+    border-bottom: 1.5px solid #000 !important;
+  }
+  /* Terms & Conditions */
+  .terms-box {
+    padding: 10px 14px 12px 14px;
+    font-size: 9.5px;
+    line-height: 1.45;
+  }
+  .terms-title {
+    font-weight: 700;
+    text-decoration: underline;
+    font-size: 10px;
+    margin-bottom: 5px;
+  }
+  .term-item {
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+  .prepared-by {
+    margin-top: 8px;
+    font-weight: 700;
+    font-size: 10px;
+  }
+
+  /* Print & Multi-Page Pagination Rules */
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+  @media print {
+    .quote-container {
+      border: none;
+    }
+  }
+  /* Never split a table row across pages */
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  /* Keep section headers with at least 2 items after them */
+  .sec-header {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+  /* Keep totals block together — never orphan at top of new page */
+  .total-row, .grand-row {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  /* Keep terms & conditions together on the same page */
+  .terms-box {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  /* Avoid page break right before the totals */
+  tbody tr:last-of-type {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+</style>
+</head>
+<body>
+<div class="quote-container">
+  <!-- 1. Top Header -->
+  <div class="top-header">
+    <div class="header-brand">
+      <img src="{{LOGO_SRC}}" alt="Ivory &amp; Gold Events" class="header-logo">
+      <div class="company-title">
+        IVORY AND GOLD<br>EVENTS
+      </div>
+    </div>
+    <div class="contact-info">
+      <div class="main-name">IVORY AND GOLD EVENTS</div>
+      <div>P.O. Box 10668 - 00100, Nairobi - Kenya</div>
+      <div>Tel. +254 (0) 723657392, +254 (0) 725018909</div>
+      <div>Komarock, Nairobi</div>
+      <div>Email: ivoryandgoldeventske@gmail.com</div>
+    </div>
+  </div>
+
+  <!-- 2. Quotation Banner -->
+  <div class="quote-banner">
+    QUOTATION
+  </div>
+
+  <!-- 3. Meta Details Grid -->
+  <div class="meta-grid">
+    <div class="meta-row">
+      <div class="meta-label">Client</div>
+      <div class="meta-val">{{CLIENT_NAME}}</div>
+      <div class="meta-right"></div>
+    </div>
+    <div class="meta-row">
+      <div class="meta-label">No.of Guests</div>
+      <div class="meta-val">{{NO_OF_GUESTS}}</div>
+      <div class="meta-right"></div>
+    </div>
+    <div class="meta-row">
+      <div class="meta-label">Colors</div>
+      <div class="meta-val">{{COLORS}}</div>
+      <div class="meta-right"></div>
+    </div>
+    <div class="meta-row">
+      <div class="meta-label">Date of function</div>
+      <div class="meta-val">{{DATE_OF_FUNCTION}}</div>
+      <div class="meta-right"></div>
+    </div>
+    <div class="meta-row">
+      <div class="meta-label">Event</div>
+      <div class="meta-val">{{EVENT_TYPE}}</div>
+      <div class="meta-right"></div>
+    </div>
+    <div class="meta-row">
+      <div class="meta-label">Venue</div>
+      <div class="meta-val">{{VENUE}}</div>
+      <div class="meta-right"></div>
+    </div>
+    <div class="meta-row">
+      <div class="meta-label">Attn:</div>
+      <div class="meta-val">{{ATTN}}</div>
+      <div class="meta-right">{{DOC_DATE}}</div>
+    </div>
+  </div>
+
+  <!-- 4. Line Items Table -->
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 80px;">QUANTITY</th>
+        <th>DESCRIPTION</th>
+        <th style="width: 120px;">UNIT PRICE</th>
+        <th style="width: 130px;">TOTAL</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="sec-header">
+        <td colspan="4">{{SECTION_TITLE}}</td>
+      </tr>
+      {{LINE_ITEMS}}
+      <!-- Blank filler rows if items are fewer than 10 -->
+      {{FILLER_ROWS}}
+      <!-- Sub Total -->
+      <tr class="total-row">
+        <td colspan="2" style="border: none; border-left: 1.5px solid #000 !important;"></td>
+        <td class="total-label">Sub Total</td>
+        <td class="total-val">{{SUBTOTAL}}</td>
+      </tr>
+      <!-- Total -->
+      <tr class="total-row grand-row">
+        <td colspan="2" style="border: none; border-left: 1.5px solid #000 !important; border-bottom: 1.5px solid #000 !important;"></td>
+        <td class="total-label">TOTAL</td>
+        <td class="total-val">{{GRAND_TOTAL}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- 5. Terms and Conditions -->
+  <div class="terms-box">
+    <div class="terms-title">TERMS &amp; CONDITIONS</div>
+    <div class="term-item">*Full payment on order confirmation</div>
+    <div class="term-item">* In the event of loss of/damage to Ivory and Gold Events property while at the client site, the client will be held liable and shall bear cost</div>
+    <div class="term-item">* Quoted prices are valid for 30 days from original quote</div>
+    <div class="term-item">* Ivory &amp; Gold Events requires that client provide 24- hour security of equipment during setup &amp; set down</div>
+    <div class="term-item">* Any additional item/s added on site will attract a delivery cost</div>
+    <div class="term-item">* All pricing information, discounts and equipment packaging contained in this document is confidential</div>
+    <div class="term-item">* Cancellation charge; 50% charge with less than 7 days notice</div>
+    <div class="prepared-by">Prepared by: Ivory &amp; Gold Events</div>
+  </div>
+</div>
+</body>
+</html>

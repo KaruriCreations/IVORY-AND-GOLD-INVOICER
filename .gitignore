@@ -1,0 +1,41 @@
+# Node modules
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Production build output
+client/dist/
+dist/
+
+# Logs & cache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.eslintcache
+.stylelintcache
+*.log
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Editor directories and files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Generated invoice test files and history exports (optional)
+server/history/*
+!server/history/.gitkeep
