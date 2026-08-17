@@ -33,7 +33,17 @@ export default function App() {
     grandTotal,
     getPayload,
     loadInvoice,
+    resetInvoice,
+    lastSaved,
+    isRestoredFromDraft,
   } = useInvoice();
+
+  // Notify user when a saved local draft is restored on initial load
+  useEffect(() => {
+    if (isRestoredFromDraft && !location.state?.invoiceData) {
+      toast.gold('Draft Restored', 'Recovered your active session from local storage.');
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hydrate form when navigating from History with saved invoice data
   useEffect(() => {
@@ -58,6 +68,11 @@ export default function App() {
     }
   };
 
+  const handleResetInvoice = () => {
+    resetInvoice();
+    toast.info('Form Cleared', 'Started a fresh new invoice template.');
+  };
+
   return (
     <>
       <Header
@@ -67,6 +82,8 @@ export default function App() {
           addSection('NEW CATEGORY');
           toast.gold('Category Section Added', 'Added new section to line items table.');
         }}
+        onResetInvoice={handleResetInvoice}
+        lastSaved={lastSaved}
       />
       <AmbientLuxuryBackground />
 
@@ -94,7 +111,11 @@ export default function App() {
             grandTotal={grandTotal}
           />
 
-          <ActionBar getPayload={getPayload} />
+          <ActionBar
+            getPayload={getPayload}
+            lastSaved={lastSaved}
+            onResetInvoice={resetInvoice}
+          />
         </div>
       </main>
 

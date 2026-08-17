@@ -6,7 +6,10 @@ const historyService = require('../services/historyService');
 
 jest.mock('../services/excelService');
 jest.mock('../services/pdfService');
-jest.mock('../services/historyService');
+jest.mock('../services/historyService', () => ({
+  saveInvoice: jest.fn().mockResolvedValue({ filename: 'test.xlsx' }),
+  sanitizeSegment: jest.fn((str, fallback = 'unknown') => (str ? str.replace(/[/\\:*?"<>|]/g, '_').replace(/[^a-zA-Z0-9_.-]/g, '_') : fallback)),
+}));
 
 describe('Generate Controller', () => {
   let req, res, next;
@@ -20,7 +23,7 @@ describe('Generate Controller', () => {
       send: jest.fn(),
     };
     next = jest.fn();
-    historyService.saveInvoice = jest.fn().mockResolvedValue({ filename: 'test.xlsx' });
+    historyService.saveInvoice.mockResolvedValue({ filename: 'test.xlsx' });
   });
 
   describe('validation failure', () => {
@@ -127,6 +130,33 @@ describe('Generate Controller', () => {
         'Content-Length': expect.any(Number),
       });
       expect(res.send).toHaveBeenCalledWith(Buffer.from('pdf buffer'));
+    });
+
+    test('handles invoiceNum with slashes (e.g. QUO/2026/0233) without failing', async () => {
+      excelService.generate.mockResolvedValueOnce(Buffer.from('xlsx buffer'));
+
+      req.body.header.invoiceNum = 'QUO/2026/0233';
+
+      await handleGenerate(req, res, next);
+
+      expect(res.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'Content-Disposition': expect.stringContaining('invoice-QUO_2026_0233.xlsx'),
+        })
+      );
+      expect(res.send).toHaveBeenCalledWith(Buffer.from('xlsx buffer'));
+    });
+
+    test('continues to return generated buffer even if history saving throws', async () => {
+      pdfService.generate.mockResolvedValueOnce(Buffer.from('pdf buffer'));
+      historyService.saveInvoice.mockRejectedValueOnce(new Error('Disk write error'));
+
+      req.body.format = 'pdf';
+
+      await handleGenerate(req, res, next);
+
+      expect(res.send).toHaveBeenCalledWith(Buffer.from('pdf buffer'));
+      expect(next).not.toHaveBeenCalled();
     });
 
     test('handles excel generation error', async () => {

@@ -1,9 +1,19 @@
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useInvoice } from './useInvoice';
 
-describe('useInvoice Hook with Multi-Category Sections & Re-editing', () => {
-  test('initializes with default sections and calculations', () => {
+const DRAFT_KEY = 'ivory_gold_invoice_draft_v1';
+
+describe('useInvoice Hook with Multi-Category Sections, Auto-Save & Recovery', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  test('initializes with default sections and calculations when no draft exists', () => {
     const { result } = renderHook(() => useInvoice());
 
     expect(result.current.sections.length).toBe(1);
@@ -11,6 +21,83 @@ describe('useInvoice Hook with Multi-Category Sections & Re-editing', () => {
     expect(result.current.sections[0].items.length).toBe(1);
     expect(result.current.subtotal).toBe(0);
     expect(result.current.grandTotal).toBe(0);
+    expect(result.current.isRestoredFromDraft).toBe(false);
+  });
+
+  test('auto-saves form modifications to localStorage', () => {
+    const { result } = renderHook(() => useInvoice());
+
+    act(() => {
+      result.current.updateHeader('clientName', 'Ruth and Elvis');
+      result.current.updateHeader('invoiceNum', 'QUO/2026/0233');
+    });
+
+    const stored = JSON.parse(localStorage.getItem(DRAFT_KEY));
+    expect(stored).toBeDefined();
+    expect(stored.header.clientName).toBe('Ruth and Elvis');
+    expect(stored.header.invoiceNum).toBe('QUO/2026/0233');
+  });
+
+  test('recovers saved draft from localStorage on initial render', () => {
+    const preSavedDraft = {
+      header: {
+        clientName: 'Ruth and Elvis Wedding',
+        invoiceNum: 'QUO/2026/0233',
+        preparedBy: 'Ivory Team',
+        date: '2026-08-17',
+        dueDate: '',
+      },
+      eventDetails: {
+        venue: 'Safari Park Hotel',
+        eventType: 'Wedding Reception',
+        noOfGuests: '350',
+        colors: 'Emerald & Gold',
+        dateOfFunction: '2026-12-12',
+        attn: 'Ruth',
+        sectionTitle: '',
+      },
+      sections: [
+        {
+          id: 1,
+          title: 'DECOR & SETUP',
+          items: [{ id: 1, description: 'Gold Chiavari Chairs', quantity: 350, unitPrice: 200 }],
+        },
+      ],
+      taxRate: 16,
+      notes: 'Payment required 14 days before event',
+      updatedAt: new Date().toISOString(),
+    };
+
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(preSavedDraft));
+
+    const { result } = renderHook(() => useInvoice());
+
+    expect(result.current.isRestoredFromDraft).toBe(true);
+    expect(result.current.header.clientName).toBe('Ruth and Elvis Wedding');
+    expect(result.current.header.invoiceNum).toBe('QUO/2026/0233');
+    expect(result.current.eventDetails.venue).toBe('Safari Park Hotel');
+    expect(result.current.sections[0].title).toBe('DECOR & SETUP');
+    expect(result.current.subtotal).toBe(70000);
+    expect(result.current.taxAmount).toBe(11200);
+    expect(result.current.grandTotal).toBe(81200);
+  });
+
+  test('resetInvoice clears state and removes localStorage draft', () => {
+    const { result } = renderHook(() => useInvoice());
+
+    act(() => {
+      result.current.updateHeader('clientName', 'Company Event');
+    });
+
+    expect(localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+
+    act(() => {
+      result.current.resetInvoice();
+    });
+
+    expect(result.current.header.clientName).toBe('');
+    expect(result.current.isRestoredFromDraft).toBe(false);
+    expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
   });
 
   test('adds a new category section', () => {

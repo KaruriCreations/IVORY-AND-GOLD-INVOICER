@@ -1,4 +1,6 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+
+const DRAFT_STORAGE_KEY = 'ivory_gold_invoice_draft_v1';
 
 let nextSectionId = 2;
 let nextItemId = 2;
@@ -36,14 +38,105 @@ const DEFAULT_EVENT_DETAILS = {
   sectionTitle: '',
 };
 
-export function useInvoice() {
-  const [header, setHeader] = useState(DEFAULT_HEADER);
-  const [eventDetails, setEventDetails] = useState(DEFAULT_EVENT_DETAILS);
-  const [sections, setSections] = useState(DEFAULT_SECTIONS);
-  const [taxRate, setTaxRate] = useState(0); // Standard Kenyan quotation format
-  const [notes, setNotes] = useState('');
+function hasMeaningfulData(draft) {
+  if (!draft) return false;
+  const hasHeader = Boolean(
+    draft.header?.clientName?.trim() ||
+    draft.header?.invoiceNum?.trim() ||
+    draft.header?.preparedBy?.trim()
+  );
+  const hasEvent = Boolean(
+    draft.eventDetails?.venue?.trim() ||
+    draft.eventDetails?.eventType?.trim() ||
+    draft.eventDetails?.colors?.trim() ||
+    draft.eventDetails?.noOfGuests?.trim() ||
+    draft.eventDetails?.attn?.trim()
+  );
+  const hasItems = (draft.sections || []).some((sec) =>
+    (sec.items || []).some(
+      (item) => item.description?.trim() || Number(item.quantity) > 0 || Number(item.unitPrice) > 0
+    )
+  );
+  const hasNotes = Boolean(draft.notes?.trim());
+  return hasHeader || hasEvent || hasItems || hasNotes;
+}
 
-  // Bulk-load saved invoice data for re-editing
+function loadInitialDraft() {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(DRAFT_STORAGE_KEY) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && hasMeaningfulData(parsed)) {
+      return parsed;
+    }
+  } catch (e) {
+    console.warn('Failed to load draft from localStorage:', e);
+  }
+  return null;
+}
+
+export function useInvoice() {
+  const initialDraftRef = useRef(loadInitialDraft());
+  const initialDraft = initialDraftRef.current;
+
+  const [header, setHeader] = useState(() => initialDraft?.header || DEFAULT_HEADER);
+  const [eventDetails, setEventDetails] = useState(() => initialDraft?.eventDetails || DEFAULT_EVENT_DETAILS);
+  const [sections, setSections] = useState(() => {
+    if (initialDraft?.sections && initialDraft.sections.length > 0) {
+      let maxSecId = 1;
+      let maxItemId = 1;
+      const loaded = initialDraft.sections.map((sec, sIdx) => {
+        const secId = Number(sec.id) || sIdx + 1;
+        if (secId > maxSecId) maxSecId = secId;
+        const items = (sec.items || []).map((item, iIdx) => {
+          const itemId = Number(item.id) || (sIdx + 1) * 100 + iIdx + 1;
+          if (itemId > maxItemId) maxItemId = itemId;
+          return {
+            id: itemId,
+            description: item.description || '',
+            quantity: Number(item.quantity) || 0,
+            unitPrice: Number(item.unitPrice) || 0,
+          };
+        });
+        return {
+          id: secId,
+          title: sec.title || 'CATEGORY',
+          items: items.length > 0 ? items : [{ id: ++maxItemId, description: '', quantity: 0, unitPrice: 0 }],
+        };
+      });
+      nextSectionId = maxSecId + 1;
+      nextItemId = maxItemId + 1;
+      return loaded;
+    }
+    return DEFAULT_SECTIONS;
+  });
+  const [taxRate, setTaxRate] = useState(() => (initialDraft ? Number(initialDraft.taxRate) || 0 : 0));
+  const [notes, setNotes] = useState(() => initialDraft?.notes || '');
+  const [lastSaved, setLastSaved] = useState(() => initialDraft?.updatedAt ? new Date(initialDraft.updatedAt) : null);
+  const [isRestoredFromDraft, setIsRestoredFromDraft] = useState(() => Boolean(initialDraft));
+
+  // Auto-save to localStorage on state changes
+  useEffect(() => {
+    try {
+      const now = new Date();
+      const draftData = {
+        header,
+        eventDetails,
+        sections,
+        taxRate,
+        notes,
+        updatedAt: now.toISOString(),
+      };
+      if (hasMeaningfulData(draftData)) {
+        localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData));
+        setLastSaved(now);
+      }
+    } catch (e) {
+      console.warn('Auto-save to localStorage failed:', e);
+    }
+  }, [header, eventDetails, sections, taxRate, notes]);
+
+  // Bulk-load saved invoice data (e.g. from History or Template)
   const loadInvoice = useCallback((data) => {
     if (!data) return;
 
@@ -66,7 +159,6 @@ export function useInvoice() {
     });
 
     if (data.sections && data.sections.length > 0) {
-      // Assign fresh IDs to avoid counter collisions
       let secId = nextSectionId;
       let itmId = nextItemId;
       const loadedSections = data.sections.map((sec) => {
@@ -89,6 +181,32 @@ export function useInvoice() {
 
     setTaxRate(Number(data.taxRate) || 0);
     setNotes(data.notes || '');
+    setIsRestoredFromDraft(false);
+  }, []);
+
+  // Reset form to blank defaults and clear saved draft
+  const resetInvoice = useCallback(() => {
+    try {
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch (e) {
+      console.warn('Failed to clear draft:', e);
+    }
+    setHeader(DEFAULT_HEADER);
+    setEventDetails(DEFAULT_EVENT_DETAILS);
+    setSections(DEFAULT_SECTIONS);
+    setTaxRate(0);
+    setNotes('');
+    setLastSaved(null);
+    setIsRestoredFromDraft(false);
+  }, []);
+
+  const clearDraft = useCallback(() => {
+    try {
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+      setLastSaved(null);
+    } catch (e) {
+      console.warn('Failed to clear draft:', e);
+    }
   }, []);
 
   const updateHeader = useCallback((field, value) => {
@@ -269,5 +387,10 @@ export function useInvoice() {
     grandTotal,
     getPayload,
     loadInvoice,
+    resetInvoice,
+    clearDraft,
+    lastSaved,
+    isRestoredFromDraft,
+    setIsRestoredFromDraft,
   };
 }

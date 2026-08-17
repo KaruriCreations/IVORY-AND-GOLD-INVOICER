@@ -44,6 +44,7 @@ const invoiceSchema = z.object({
   items: z.array(lineItemSchema).optional().default([]),
   taxRate: z.number().nonnegative().optional().default(0),
   notes: z.string().optional().default(''),
+  clientId: z.string().optional().default('default'),
   format: z.enum(['xlsx', 'pdf'], {
     errorMap: () => ({ message: 'Format must be "xlsx" or "pdf"' }),
   }),

@@ -1,26 +1,38 @@
 const express = require('express');
 const router = express.Router();
-const { getHistoryList, getInvoiceMetadata, deleteHistoryFile, HISTORY_DIR } = require('../services/historyService');
+const {
+  getHistoryList,
+  getInvoiceMetadata,
+  deleteHistoryFile,
+  findHistoryFilePath,
+} = require('../services/historyService');
 const fs = require('fs');
-const path = require('path');
+
+// Helper to extract clientId from header, query, or body
+function getRequestClientId(req) {
+  return req.headers?.['x-client-id'] || req.query?.clientId || req.body?.clientId || 'default';
+}
 
 // GET /api/history
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const files = await getHistoryList();
-    res.json({ success: true, files });
+    const clientId = getRequestClientId(req);
+    const files = await getHistoryList(clientId);
+    res.json({ success: true, files, clientId });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
 // GET /api/history/metadata?filename=...
 router.get('/metadata', async (req, res) => {
   try {
     const { filename } = req.query;
+    const clientId = getRequestClientId(req);
     if (!filename) {
       return res.status(400).json({ error: 'Filename required' });
     }
-    const metadata = await getInvoiceMetadata(filename);
+    const metadata = await getInvoiceMetadata(filename, clientId);
     res.json({ success: true, data: metadata });
   } catch (err) {
     if (err.code === 'ENOENT') {
@@ -31,20 +43,21 @@ router.get('/metadata', async (req, res) => {
 });
 
 // GET /api/history/download?filename=...
-router.get('/download', (req, res) => {
+router.get('/download', async (req, res) => {
   try {
     const { filename } = req.query;
+    const clientId = getRequestClientId(req);
     if (!filename) {
       return res.status(400).json({ error: 'Filename required' });
     }
 
-    const safeFilename = path.basename(filename);
-    const filePath = path.join(HISTORY_DIR, safeFilename);
+    const filePath = await findHistoryFilePath(filename, clientId);
 
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'File not found' });
     }
 
+    const safeFilename = require('path').basename(filename);
     const fileContent = fs.readFileSync(filePath);
     res.set({
       'Content-Type':
@@ -65,7 +78,8 @@ router.get('/download', (req, res) => {
 router.delete('/:filename', async (req, res) => {
   try {
     const { filename } = req.params;
-    await deleteHistoryFile(filename);
+    const clientId = getRequestClientId(req);
+    await deleteHistoryFile(filename, clientId);
     res.json({ success: true, message: 'File deleted' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

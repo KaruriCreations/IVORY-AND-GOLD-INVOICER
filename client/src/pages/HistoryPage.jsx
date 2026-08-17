@@ -8,12 +8,25 @@ import MagneticHoverButton from '../components/ui/MagneticHoverButton';
 import SpotlightText from '../components/ui/SpotlightText';
 import useSparkleBurst from '../components/ui/SparkleBurst';
 import { useToast } from '../components/ui/Toast';
+import {
+  getLocalHistory,
+  removeLocalHistoryEntry,
+  mergeServerAndLocalHistory,
+  getWorkspaceId,
+  setWorkspaceId,
+  getClientId,
+} from '../services/historyStore';
+import { generateDocument } from '../services/api';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
 export default function HistoryPage() {
-  const [files, setFiles] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [activeWorkspace, setActiveWorkspace] = useState(() => getWorkspaceId());
+  const [isWorkspaceModalOpen, setIsWorkspaceModalOpen] = useState(false);
+  const [workspaceInput, setWorkspaceInput] = useState('');
+  const [files, setFiles] = useState(() => getLocalHistory(getWorkspaceId()));
+  const [loading, setLoading] = useState(() => getLocalHistory(getWorkspaceId()).length === 0);
+  const [downloadingFile, setDownloadingFile] = useState(null);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [filterFormat, setFilterFormat] = useState('all');
@@ -23,17 +36,39 @@ export default function HistoryPage() {
   const { trigger: triggerSparkle, SparkleOverlay } = useSparkleBurst();
   const toast = useToast();
 
+  const currentWorkspaceId = getWorkspaceId();
+  const isIndividual = currentWorkspaceId === getClientId();
+
   const fetchHistory = async () => {
     try {
-      setLoading(true);
+      const currentLocal = getLocalHistory(currentWorkspaceId);
+      if (currentLocal.length === 0) {
+        setLoading(true);
+      }
       setError('');
-      const res = await fetch(`${API_BASE_URL}/api/history`);
-      if (!res.ok) throw new Error('Failed to fetch invoice history');
-      const data = await res.json();
-      setFiles(data.files || []);
+      const res = await fetch(`${API_BASE_URL}/api/history`, {
+        headers: {
+          'X-Client-Id': currentWorkspaceId,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const serverFiles = data.files || [];
+        const merged = mergeServerAndLocalHistory(serverFiles, currentLocal);
+        setFiles(merged);
+      } else {
+        // If server is not ready or fails, preserve existing local files
+        const localOnly = getLocalHistory(currentWorkspaceId);
+        setFiles(localOnly);
+      }
     } catch (err) {
-      console.error('History fetch error:', err);
-      setError(err.message || 'Could not load history');
+      console.warn('Server history sync notice:', err);
+      // Seamlessly keep local files so history never blanks out on refresh
+      const localOnly = getLocalHistory(currentWorkspaceId);
+      setFiles(localOnly);
+      if (localOnly.length === 0) {
+        setError('Server is spinning up. Retrying connection...');
+      }
     } finally {
       setLoading(false);
     }
@@ -41,19 +76,41 @@ export default function HistoryPage() {
 
   useEffect(() => {
     fetchHistory();
-  }, []);
+  }, [activeWorkspace]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSaveWorkspace = (e) => {
+    e.preventDefault();
+    const clean = workspaceInput.trim();
+    setWorkspaceId(clean);
+    const newWs = getWorkspaceId();
+    setActiveWorkspace(newWs);
+    setFiles(getLocalHistory(newWs));
+    setIsWorkspaceModalOpen(false);
+    toast.gold(
+      clean ? 'Shared Workspace Connected' : 'Individual Space Active',
+      clean
+        ? `Syncing invoice history for team workspace "${clean}".`
+        : 'Reverted to private individual browser history.'
+    );
+  };
 
   const handleDelete = async (filename, e) => {
     if (e) e.stopPropagation();
     if (!window.confirm(`Are you sure you want to delete "${filename}"?`)) return;
     try {
       setDeletingFile(filename);
-      const res = await fetch(`${API_BASE_URL}/api/history/${encodeURIComponent(filename)}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) throw new Error('Failed to delete file');
+      // Remove from local persistent store immediately
+      removeLocalHistoryEntry(filename);
       setFiles((prev) => prev.filter((f) => f.name !== filename));
       toast.info('Document Deleted', `Permanently removed "${filename}" from history.`);
+
+      // Also request server cleanup in background
+      await fetch(`${API_BASE_URL}/api/history/${encodeURIComponent(filename)}`, {
+        method: 'DELETE',
+        headers: {
+          'X-Client-Id': currentWorkspaceId,
+        },
+      }).catch(() => {});
     } catch (err) {
       toast.error('Delete Failed', err.message || 'Error deleting file');
     } finally {
@@ -61,20 +118,84 @@ export default function HistoryPage() {
     }
   };
 
-  const handleReEdit = async (filename, e) => {
+  const handleReEdit = async (file, e) => {
     triggerSparkle(e);
     try {
-      setLoadingEdit(filename);
+      setLoadingEdit(file.name);
+      // If invoiceData is already stored locally, re-edit instantly!
+      if (file.invoiceData) {
+        navigate('/', { state: { invoiceData: file.invoiceData } });
+        return;
+      }
+
+      // Fallback: fetch metadata from server
       const res = await fetch(
-        `${API_BASE_URL}/api/history/metadata?filename=${encodeURIComponent(filename)}`
+        `${API_BASE_URL}/api/history/metadata?filename=${encodeURIComponent(file.name)}`,
+        {
+          headers: {
+            'X-Client-Id': currentWorkspaceId,
+          },
+        }
       );
-      if (!res.ok) throw new Error('Could not load invoice data');
+      if (!res.ok) throw new Error('Could not load invoice data from server');
       const json = await res.json();
       navigate('/', { state: { invoiceData: json.data } });
     } catch (err) {
       alert(err.message || 'Failed to load invoice for editing');
     } finally {
       setLoadingEdit(null);
+    }
+  };
+
+  const handleDownload = async (file, e) => {
+    triggerSparkle(e);
+    setDownloadingFile(file.name);
+    try {
+      // 1. Try downloading from server directly
+      const downloadUrl = `${API_BASE_URL}/api/history/download?filename=${encodeURIComponent(file.name)}`;
+      const res = await fetch(downloadUrl, {
+        headers: {
+          'X-Client-Id': currentWorkspaceId,
+        },
+      });
+      
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 1000);
+        return;
+      }
+
+      // 2. If server file was wiped (e.g. server restarted on free tier) but we have invoiceData:
+      if (file.invoiceData) {
+        toast.info('Regenerating Document', 'Server storage was refreshed; generating fresh copy from your saved data...');
+        await generateDocument(file.invoiceData, file.format);
+        return;
+      }
+
+      throw new Error(`File not found on server (status: ${res.status})`);
+    } catch (err) {
+      // If client has invoiceData, try generating directly as fallback
+      if (file.invoiceData) {
+        try {
+          await generateDocument(file.invoiceData, file.format);
+          return;
+        } catch (genErr) {
+          toast.error('Download Failed', genErr.message || 'Could not generate document');
+          return;
+        }
+      }
+      toast.error('Download Failed', err.message || 'Error downloading file');
+    } finally {
+      setDownloadingFile(null);
     }
   };
 
@@ -133,19 +254,38 @@ export default function HistoryPage() {
           >
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-md">
               <div>
-                <h1 className="font-display-lg text-display-lg text-on-surface mb-xs">
-                  <SpotlightText
-                    text="Document History"
-                    spotlightColor="rgba(212, 175, 55, 0.9)"
-                    baseClassName="text-on-surface"
-                  />
-                </h1>
+                <div className="flex items-center gap-2 mb-xs">
+                  <h1 className="font-display-lg text-display-lg text-on-surface">
+                    <SpotlightText
+                      text="Document History"
+                      spotlightColor="rgba(212, 175, 55, 0.9)"
+                      baseClassName="text-on-surface"
+                    />
+                  </h1>
+                </div>
                 <p className="font-body-md text-body-md text-on-surface-variant">
                   Access, re-edit, re-download, or manage all generated invoices and spreadsheets.
                 </p>
               </div>
 
               <div className="flex items-center gap-sm flex-wrap">
+                {/* Workspace / Individual Mode Badge */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWorkspaceInput(isIndividual ? '' : currentWorkspaceId);
+                    setIsWorkspaceModalOpen(true);
+                  }}
+                  className="bg-surface-container-low hover:bg-surface-container-high text-on-surface border border-outline-variant/40 px-md py-sm rounded-full flex items-center gap-xs text-xs font-semibold transition-all shadow-xs"
+                  title="Configure private or shared team workspace history"
+                >
+                  <span className="material-symbols-outlined text-[16px] text-primary">
+                    {isIndividual ? 'person' : 'group'}
+                  </span>
+                  <span>{isIndividual ? 'Private History' : `Team: ${currentWorkspaceId}`}</span>
+                  <span className="material-symbols-outlined text-[14px] opacity-60">settings</span>
+                </button>
+
                 <div className="bg-primary-container text-white px-md py-sm rounded-full flex items-center gap-xs shadow-sm font-label-md text-label-md border border-white/10">
                   <span className="material-symbols-outlined text-[18px] text-[#ffd700]">folder</span>
                   <span>{stats.total} Total</span>
@@ -344,7 +484,7 @@ export default function HistoryPage() {
                     <div className="pt-sm border-t border-outline-variant/20 flex items-center gap-2">
                       {file.hasMetadata && (
                         <MagneticHoverButton
-                          onClick={(e) => handleReEdit(file.name, e)}
+                          onClick={(e) => handleReEdit(file, e)}
                           disabled={loadingEdit === file.name}
                           variant="outline"
                           className="flex-1 py-2 text-xs font-semibold"
@@ -355,24 +495,94 @@ export default function HistoryPage() {
                           <span>{loadingEdit === file.name ? 'Loading...' : 'Re-Edit'}</span>
                         </MagneticHoverButton>
                       )}
-                      <a
-                        href={`${API_BASE_URL}/api/history/download?filename=${encodeURIComponent(file.name)}`}
-                        download={file.name}
-                        onClick={(e) => triggerSparkle(e)}
+                      <button
+                        type="button"
+                        onClick={(e) => handleDownload(file, e)}
+                        disabled={downloadingFile === file.name}
                         className={`flex-1 flex items-center justify-center gap-1 font-label-md text-xs font-semibold py-2 rounded-xl transition-all shadow-sm active:scale-[0.98] ${
                           isPdf
                             ? 'bg-primary text-white hover:bg-primary-container'
                             : 'bg-secondary text-white hover:bg-secondary/90'
                         }`}
                       >
-                        <span className="material-symbols-outlined text-[16px]">download</span>
-                        <span>Download {isPdf ? '.pdf' : '.xlsx'}</span>
-                      </a>
+                        <span className="material-symbols-outlined text-[16px]">
+                          {downloadingFile === file.name ? 'hourglass_empty' : 'download'}
+                        </span>
+                        <span>{downloadingFile === file.name ? 'Downloading...' : `Download ${isPdf ? '.pdf' : '.xlsx'}`}</span>
+                      </button>
                     </div>
                   </InteractiveGlowCard>
                 );
               })}
             </section>
+          )}
+
+          {/* Workspace Settings Modal */}
+          {isWorkspaceModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div
+                className="fixed inset-0 bg-[#041627]/60 backdrop-blur-md"
+                onClick={() => setIsWorkspaceModalOpen(false)}
+              />
+              <div className="relative w-full max-w-md bg-surface-container-lowest border border-outline-variant/40 rounded-2xl shadow-2xl p-6 z-10">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-[24px]">group_work</span>
+                    <h3 className="font-headline-md text-[18px] text-on-surface font-semibold">
+                      Session & History Mode
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setIsWorkspaceModalOpen(false)}
+                    className="text-on-surface-variant/60 hover:text-on-surface"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">close</span>
+                  </button>
+                </div>
+
+                <p className="text-body-sm text-on-surface-variant/80 mb-4">
+                  By default, your generated invoices are private and individual to your session. If you want to sync and share invoice history across devices or team members, enter a shared Workspace Code.
+                </p>
+
+                <form onSubmit={handleSaveWorkspace} className="flex flex-col gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-on-surface mb-1">
+                      Workspace Code (Leave blank for Private Individual History)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. ivory-team-ke or leave blank"
+                      value={workspaceInput}
+                      onChange={(e) => setWorkspaceInput(e.target.value)}
+                      className="w-full bg-surface border border-outline-variant rounded-xl py-2 px-3 text-sm text-on-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    />
+                  </div>
+
+                  <div className="bg-surface-container-low/60 rounded-xl p-3 text-xs text-on-surface-variant flex items-start gap-2">
+                    <span className="material-symbols-outlined text-primary text-[16px] mt-0.5">info</span>
+                    <span className="break-all">
+                      Current Device ID: <code className="font-mono font-bold text-primary">{getClientId()}</code>
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsWorkspaceModalOpen(false)}
+                      className="px-4 py-2 text-xs font-semibold text-on-surface-variant hover:text-on-surface rounded-xl"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 text-xs font-semibold text-white bg-primary hover:bg-primary-container rounded-xl shadow-sm"
+                    >
+                      Save Settings
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
           )}
         </div>
       </main>

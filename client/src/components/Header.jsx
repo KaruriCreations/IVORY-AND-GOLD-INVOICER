@@ -4,7 +4,7 @@ import logo from '../assets/logo.png';
 import SpotlightText from './ui/SpotlightText';
 import CommandPalette from './ui/CommandPalette';
 
-export default function Header({ onExportPdf, onExportXlsx, onAddSection }) {
+export default function Header({ onExportPdf, onExportXlsx, onAddSection, onResetInvoice, lastSaved }) {
   const location = useLocation();
   const currentPath = location.pathname;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -57,6 +57,7 @@ export default function Header({ onExportPdf, onExportXlsx, onAddSection }) {
             onExportPdf={onExportPdf}
             onExportXlsx={onExportXlsx}
             onAddSection={onAddSection}
+            onResetInvoice={onResetInvoice}
           />
         </div>
 

@@ -1,7 +1,7 @@
 const { validateInvoice } = require('../utils/validation');
 const excelService = require('../services/excelService');
 const pdfService = require('../services/pdfService');
-const { saveInvoice } = require('../services/historyService');
+const { saveInvoice, sanitizeSegment } = require('../services/historyService');
 
 async function handleGenerate(req, res, next) {
   try {
@@ -18,20 +18,23 @@ async function handleGenerate(req, res, next) {
     const { format } = data;
 
     let buffer;
-    let filename;
+    const safeInvoiceNum = sanitizeSegment(data.header?.invoiceNum, 'draft', 40);
+    const filename = `invoice-${safeInvoiceNum}.${format}`;
 
     if (format === 'xlsx') {
       buffer = await excelService.generate(data);
-      filename = `invoice-${data.header.invoiceNum || 'draft'}.xlsx`;
+    } else if (format === 'pdf') {
+      buffer = await pdfService.generate(data);
     }
 
-    if (format === 'pdf') {
-      buffer = await pdfService.generate(data);
-      filename = `invoice-${data.header.invoiceNum || 'draft'}.pdf`;
-    }
+    const clientId = req.headers?.['x-client-id'] || data.clientId || 'default';
 
     if (buffer) {
-      await saveInvoice(format, data, buffer);
+      try {
+        await saveInvoice(format, data, buffer, clientId);
+      } catch (historyErr) {
+        console.error('[History Archive Error]:', historyErr);
+      }
     }
 
     res.set({
@@ -40,7 +43,7 @@ async function handleGenerate(req, res, next) {
           ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
           : 'application/pdf',
       'Content-Disposition': `attachment; filename="${filename}"`,
-      'Content-Length': buffer.length,
+      'Content-Length': buffer ? buffer.length : 0,
     });
 
     return res.send(buffer);

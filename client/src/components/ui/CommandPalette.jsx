@@ -6,7 +6,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
  * CommandPalette (Cmd+K / Ctrl+K)
  * Quick search and action launcher across the entire application
  */
-export default function CommandPalette({ onExportPdf, onExportXlsx, onAddSection }) {
+export default function CommandPalette({ onExportPdf, onExportXlsx, onAddSection, onResetInvoice }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -93,6 +93,21 @@ export default function CommandPalette({ onExportPdf, onExportXlsx, onAddSection
         setIsOpen(false);
       },
     },
+    ...(onResetInvoice
+      ? [
+          {
+            id: 'act-reset',
+            category: 'Actions',
+            label: 'Start Fresh / Clear Form',
+            desc: 'Reset all form inputs to blank and clear local draft',
+            icon: 'restart_alt',
+            action: () => {
+              onResetInvoice();
+              setIsOpen(false);
+            },
+          },
+        ]
+      : []),
   ];
 
   const filtered = commands.filter(
