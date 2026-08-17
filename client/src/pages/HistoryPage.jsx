@@ -20,10 +20,44 @@ import { generateDocument } from '../services/api';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
+function getActiveDraftInfo() {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('ivory_gold_invoice_draft_v1') : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+
+    const clientName = parsed.header?.clientName?.trim() || '';
+    const invoiceNum = parsed.header?.invoiceNum?.trim() || '';
+    const sections = parsed.sections || [];
+    const items = sections.flatMap((s) => s.items || []);
+    const validItems = items.filter((i) => i.description?.trim() || Number(i.quantity) > 0 || Number(i.unitPrice) > 0);
+
+    const hasData = Boolean(clientName || invoiceNum || validItems.length > 0 || parsed.notes?.trim());
+    if (!hasData) return null;
+
+    const subtotal = validItems.reduce((acc, i) => acc + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0);
+    const taxRate = Number(parsed.taxRate) || 0;
+    const grandTotal = Math.round((subtotal + subtotal * (taxRate / 100)) * 100) / 100;
+
+    return {
+      clientName: clientName || 'Untitled Client',
+      invoiceNum: invoiceNum || 'Draft Invoice',
+      itemCount: validItems.length,
+      grandTotal,
+      updatedAt: parsed.updatedAt,
+      draftData: parsed,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function HistoryPage() {
   const [activeWorkspace, setActiveWorkspace] = useState(() => getWorkspaceId());
   const [isWorkspaceModalOpen, setIsWorkspaceModalOpen] = useState(false);
   const [workspaceInput, setWorkspaceInput] = useState('');
+  const [activeDraftInfo, setActiveDraftInfo] = useState(() => getActiveDraftInfo());
   const [files, setFiles] = useState(() => getLocalHistory(getWorkspaceId()));
   const [loading, setLoading] = useState(() => getLocalHistory(getWorkspaceId()).length === 0);
   const [downloadingFile, setDownloadingFile] = useState(null);
@@ -348,6 +382,64 @@ export default function HistoryPage() {
             </div>
           </InteractiveGlowCard>
 
+          {/* Active Editing Session / Current Draft Banner */}
+          {activeDraftInfo && (
+            <InteractiveGlowCard
+              enableTilt={false}
+              glowColor="rgba(212, 175, 55, 0.35)"
+              className="bg-linear-to-r from-surface-container-lowest via-surface-container-low to-surface-container-lowest border-2 border-primary/40 shadow-[0_8px_30px_rgba(212,175,55,0.12)] rounded-2xl p-md md:p-lg relative overflow-hidden"
+            >
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-md">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-center text-primary shrink-0 mt-0.5 shadow-inner">
+                    <span className="material-symbols-outlined text-[24px]">edit_note</span>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                      </span>
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-primary">
+                        Active Editing Session In Progress
+                      </span>
+                      {!isIndividual && (
+                        <span className="bg-primary/15 text-primary text-[10px] px-2 py-0.5 rounded-full font-bold border border-primary/25">
+                          Team: {currentWorkspaceId}
+                        </span>
+                      )}
+                    </div>
+                    <h2 className="text-on-surface font-semibold text-[16px] md:text-[18px]">
+                      {activeDraftInfo.clientName} &bull; <span className="font-mono text-primary font-bold">{activeDraftInfo.invoiceNum}</span>
+                    </h2>
+                    <p className="text-xs text-on-surface-variant/80 mt-0.5">
+                      {activeDraftInfo.itemCount} line {activeDraftInfo.itemCount === 1 ? 'item' : 'items'}
+                      {activeDraftInfo.grandTotal > 0 && ` • Estimated Total: KES ${activeDraftInfo.grandTotal.toLocaleString()}`}
+                      {activeDraftInfo.updatedAt && ` • Last active: ${formatDate(activeDraftInfo.updatedAt)}`}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                  <MagneticHoverButton
+                    onClick={(e) => {
+                      triggerSparkle(e);
+                      navigate('/');
+                    }}
+                    variant="primary"
+                    glowColor="rgba(212, 175, 55, 0.6)"
+                    className="w-full md:w-auto px-6 py-2.5 font-label-md text-xs md:text-sm font-bold shadow-md flex items-center justify-center gap-2"
+                  >
+                    <span className="material-symbols-outlined text-[18px] text-[#ffd700]">
+                      open_in_new
+                    </span>
+                    <span>Open Active Session</span>
+                  </MagneticHoverButton>
+                </div>
+              </div>
+            </InteractiveGlowCard>
+          )}
+
           {/* Error Message */}
           {error && (
             <div className="bg-error-container/40 border border-error/30 text-error rounded-xl p-md flex items-center justify-between">
@@ -487,12 +579,14 @@ export default function HistoryPage() {
                           onClick={(e) => handleReEdit(file, e)}
                           disabled={loadingEdit === file.name}
                           variant="outline"
-                          className="flex-1 py-2 text-xs font-semibold"
+                          glowColor="rgba(212, 175, 55, 0.4)"
+                          className="flex-1 py-2 text-xs font-semibold flex items-center justify-center gap-1.5"
+                          title="Open and load this invoice directly in the Editor"
                         >
-                          <span className="material-symbols-outlined text-[16px]">
+                          <span className="material-symbols-outlined text-[16px] text-primary">
                             {loadingEdit === file.name ? 'hourglass_empty' : 'edit_document'}
                           </span>
-                          <span>{loadingEdit === file.name ? 'Loading...' : 'Re-Edit'}</span>
+                          <span>{loadingEdit === file.name ? 'Opening...' : 'Open in Editor'}</span>
                         </MagneticHoverButton>
                       )}
                       <button
