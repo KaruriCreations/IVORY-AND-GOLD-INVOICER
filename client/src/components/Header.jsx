@@ -6,6 +6,8 @@ import CommandPalette from './ui/CommandPalette';
 import { getWorkspaceId, setWorkspaceId, getClientId } from '../services/historyStore';
 import { useToast } from './ui/Toast';
 
+import WorkspaceActivityFeed from './ui/WorkspaceActivityFeed';
+
 export default function Header({ onExportPdf, onExportXlsx, onAddSection, onResetInvoice, lastSaved }) {
   const location = useLocation();
   const currentPath = location.pathname;
@@ -90,6 +92,9 @@ export default function Header({ onExportPdf, onExportXlsx, onAddSection, onRese
           </div>
 
           <div className="flex items-center gap-sm">
+            {/* Live Shared Workspace Activity Feed */}
+            <WorkspaceActivityFeed />
+
             {/* Workspace Switcher */}
             <button
               type="button"

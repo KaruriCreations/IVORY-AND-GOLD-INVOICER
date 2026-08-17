@@ -1,4 +1,11 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { recordWorkspaceActivity, getUserDisplayLabel } from '../services/workspaceCollabStore';
+import { getWorkspaceId, getClientId } from '../services/historyStore';
+import {
+  broadcastLiveDraftUpdate,
+  subscribeToLiveWorkspaceSync,
+  shouldApplyRemoteDraft,
+} from '../services/workspaceLiveSync';
 
 const DRAFT_STORAGE_KEY = 'ivory_gold_invoice_draft_v1';
 
@@ -114,29 +121,17 @@ export function useInvoice() {
   const [notes, setNotes] = useState(() => initialDraft?.notes || '');
   const [lastSaved, setLastSaved] = useState(() => initialDraft?.updatedAt ? new Date(initialDraft.updatedAt) : null);
   const [isRestoredFromDraft, setIsRestoredFromDraft] = useState(() => Boolean(initialDraft));
+  const [lastRemoteEditor, setLastRemoteEditor] = useState(null);
 
-  // Auto-save to localStorage on state changes
-  useEffect(() => {
-    try {
-      const now = new Date();
-      const draftData = {
-        header,
-        eventDetails,
-        sections,
-        taxRate,
-        notes,
-        updatedAt: now.toISOString(),
-      };
-      if (hasMeaningfulData(draftData)) {
-        localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData));
-        setLastSaved(now);
-      }
-    } catch (e) {
-      console.warn('Auto-save to localStorage failed:', e);
-    }
-  }, [header, eventDetails, sections, taxRate, notes]);
+  const isIncomingRemoteUpdate = useRef(false);
+  const lastSavedRef = useRef(lastSaved);
+  lastSavedRef.current = lastSaved;
 
-  // Bulk-load saved invoice data (e.g. from History or Template)
+  const activeWorkspaceId = getWorkspaceId();
+  const myClientId = getClientId();
+  const isSharedWorkspace = activeWorkspaceId !== myClientId && !activeWorkspaceId.startsWith('user_');
+
+  // Bulk-load saved invoice data (e.g. from History, Template, or Remote Sync)
   const loadInvoice = useCallback((data) => {
     if (!data) return;
 
@@ -184,6 +179,68 @@ export function useInvoice() {
     setIsRestoredFromDraft(false);
   }, []);
 
+  // Auto-save to localStorage & live broadcast to shared workspace peers
+  useEffect(() => {
+    if (isIncomingRemoteUpdate.current) {
+      isIncomingRemoteUpdate.current = false;
+      return;
+    }
+
+    try {
+      const now = new Date();
+      const draftData = {
+        header,
+        eventDetails,
+        sections,
+        taxRate,
+        notes,
+        updatedAt: now.toISOString(),
+      };
+      if (hasMeaningfulData(draftData)) {
+        localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData));
+        setLastSaved(now);
+
+        // Broadcast to shared team workspace peers
+        if (isSharedWorkspace) {
+          broadcastLiveDraftUpdate({
+            workspaceId: activeWorkspaceId,
+            userId: myClientId,
+            userLabel: getUserDisplayLabel(myClientId),
+            draft: draftData,
+            timestamp: now.toISOString(),
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Auto-save to localStorage failed:', e);
+    }
+  }, [header, eventDetails, sections, taxRate, notes, isSharedWorkspace, activeWorkspaceId, myClientId]);
+
+  // Subscribe to real-time live remote draft updates from team members
+  useEffect(() => {
+    if (!isSharedWorkspace) {
+      setLastRemoteEditor(null);
+      return;
+    }
+
+    const unsubscribe = subscribeToLiveWorkspaceSync(
+      activeWorkspaceId,
+      (remoteUpdate) => {
+        if (shouldApplyRemoteDraft(remoteUpdate, lastSavedRef.current?.toISOString(), myClientId)) {
+          isIncomingRemoteUpdate.current = true;
+          loadInvoice(remoteUpdate.draft);
+          setLastRemoteEditor(remoteUpdate.userLabel || 'Team Member');
+          if (remoteUpdate.timestamp) {
+            setLastSaved(new Date(remoteUpdate.timestamp));
+          }
+        }
+      },
+      myClientId
+    );
+
+    return () => unsubscribe();
+  }, [activeWorkspaceId, isSharedWorkspace, myClientId, loadInvoice]);
+
   // Reset form to blank defaults and clear saved draft
   const resetInvoice = useCallback(() => {
     try {
@@ -219,11 +276,12 @@ export function useInvoice() {
 
   // Section management
   const addSection = useCallback((title = 'NEW CATEGORY') => {
+    const formattedTitle = title.toUpperCase();
     setSections((prev) => [
       ...prev,
       {
         id: nextSectionId++,
-        title: title.toUpperCase(),
+        title: formattedTitle,
         items: [
           {
             id: nextItemId++,
@@ -234,11 +292,25 @@ export function useInvoice() {
         ],
       },
     ]);
+
+    recordWorkspaceActivity({
+      workspaceId: getWorkspaceId(),
+      userId: getClientId(),
+      action: 'ADD_SECTION',
+      details: `Added new section "${formattedTitle}"`,
+    });
   }, []);
 
   const removeSection = useCallback((sectionId) => {
     setSections((prev) => {
       if (prev.length <= 1) return prev;
+      const target = prev.find((s) => s.id === sectionId);
+      recordWorkspaceActivity({
+        workspaceId: getWorkspaceId(),
+        userId: getClientId(),
+        action: 'REMOVE_SECTION',
+        details: `Removed section "${target?.title || 'Section'}"`,
+      });
       return prev.filter((s) => s.id !== sectionId);
     });
   }, []);
@@ -254,6 +326,12 @@ export function useInvoice() {
     setSections((prev) =>
       prev.map((s) => {
         if (s.id === sectionId) {
+          recordWorkspaceActivity({
+            workspaceId: getWorkspaceId(),
+            userId: getClientId(),
+            action: 'ADD_ITEM',
+            details: `Added a new line item to "${s.title}"`,
+          });
           return {
             ...s,
             items: [
@@ -272,6 +350,12 @@ export function useInvoice() {
       prev.map((s) => {
         if (s.id === sectionId) {
           const newItems = s.items.filter((item) => item.id !== itemId);
+          recordWorkspaceActivity({
+            workspaceId: getWorkspaceId(),
+            userId: getClientId(),
+            action: 'REMOVE_ITEM',
+            details: `Removed a line item from "${s.title}"`,
+          });
           return {
             ...s,
             items: newItems.length > 0 ? newItems : s.items,
@@ -392,5 +476,7 @@ export function useInvoice() {
     lastSaved,
     isRestoredFromDraft,
     setIsRestoredFromDraft,
+    lastRemoteEditor,
+    isSharedWorkspace,
   };
 }

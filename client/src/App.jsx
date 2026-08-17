@@ -36,6 +36,8 @@ export default function App() {
     resetInvoice,
     lastSaved,
     isRestoredFromDraft,
+    lastRemoteEditor,
+    isSharedWorkspace,
   } = useInvoice();
 
   // Notify user when a saved local draft is restored on initial load
@@ -115,6 +117,8 @@ export default function App() {
             getPayload={getPayload}
             lastSaved={lastSaved}
             onResetInvoice={resetInvoice}
+            lastRemoteEditor={lastRemoteEditor}
+            isSharedWorkspace={isSharedWorkspace}
           />
         </div>
       </main>

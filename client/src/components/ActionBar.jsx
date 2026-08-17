@@ -4,7 +4,13 @@ import MagneticHoverButton from './ui/MagneticHoverButton';
 import useSparkleBurst from './ui/SparkleBurst';
 import { useToast } from './ui/Toast';
 
-export default function ActionBar({ getPayload, lastSaved, onResetInvoice }) {
+export default function ActionBar({
+  getPayload,
+  lastSaved,
+  onResetInvoice,
+  lastRemoteEditor,
+  isSharedWorkspace,
+}) {
   const [loading, setLoading] = useState(null); // 'xlsx' | 'pdf' | null
   const [error, setError] = useState('');
   const { trigger: triggerSparkle, SparkleOverlay } = useSparkleBurst();
@@ -54,7 +60,7 @@ export default function ActionBar({ getPayload, lastSaved, onResetInvoice }) {
     <section className="mt-4 md:mt-xl flex flex-col md:flex-row justify-between items-center gap-4 py-4 border-t border-outline-variant/30 relative z-10">
       <SparkleOverlay />
       
-      {/* Auto-save & status information */}
+      {/* Auto-save & live team sync status */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <span className="relative flex h-2.5 w-2.5">
@@ -64,6 +70,11 @@ export default function ActionBar({ getPayload, lastSaved, onResetInvoice }) {
           <p className="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-1.5">
             {error ? (
               <span className="text-error font-medium">{error}</span>
+            ) : isSharedWorkspace ? (
+              <span>
+                <strong className="text-primary font-semibold">Live Workspace Sync</strong>
+                {lastRemoteEditor ? ` (synced from ${lastRemoteEditor})` : savedTimeStr ? ` (${savedTimeStr})` : ''}
+              </span>
             ) : savedTimeStr ? (
               <span>
                 <strong className="text-on-surface font-medium">Draft auto-saved</strong> ({savedTimeStr})

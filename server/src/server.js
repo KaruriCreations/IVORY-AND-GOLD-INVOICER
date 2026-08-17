@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const generateRoute = require('./routes/generateRoute');
 const historyRoute = require('./routes/historyRoute');
+const workspaceRoute = require('./routes/workspaceRoute');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -14,6 +15,7 @@ app.use(express.json({ limit: '10mb' }));
 // Routes
 app.use('/api', generateRoute);
 app.use('/api/history', historyRoute);
+app.use('/api/workspace', workspaceRoute);
 
 // Health check
 app.get('/health', (_req, res) => {

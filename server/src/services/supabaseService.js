@@ -116,10 +116,54 @@ async function deleteInvoiceFromSupabase(filename, clientId = 'default') {
   }
 }
 
+async function saveWorkspaceDraftToSupabase(workspaceId, draftData, lastEditedBy = 'Team Member') {
+  if (!supabase || !workspaceId) return null;
+
+  const payload = {
+    workspace_id: workspaceId,
+    draft_data: draftData,
+    last_edited_by: lastEditedBy,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from('workspace_drafts')
+    .upsert(payload, { onConflict: 'workspace_id' })
+    .select()
+    .single();
+
+  if (error) {
+    console.warn('[Supabase Workspace Draft Save Notice]:', error.message);
+    return null;
+  }
+  return data;
+}
+
+async function getWorkspaceDraftFromSupabase(workspaceId) {
+  if (!supabase || !workspaceId) return null;
+
+  const { data, error } = await supabase
+    .from('workspace_drafts')
+    .select('draft_data, last_edited_by, updated_at')
+    .eq('workspace_id', workspaceId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  return {
+    workspaceId,
+    draft: data.draft_data,
+    lastEditedBy: data.last_edited_by,
+    updatedAt: data.updated_at,
+  };
+}
+
 module.exports = {
   isSupabaseConfigured,
   saveInvoiceToSupabase,
   getHistoryListFromSupabase,
   getInvoiceMetadataFromSupabase,
   deleteInvoiceFromSupabase,
+  saveWorkspaceDraftToSupabase,
+  getWorkspaceDraftFromSupabase,
 };

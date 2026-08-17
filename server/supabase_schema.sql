@@ -29,3 +29,42 @@ create policy "Allow all operations for invoices"
   for all
   using (true)
   with check (true);
+
+-- ==============================================================================
+-- Workspace Live Collaboration Drafts & Activity
+-- ==============================================================================
+
+-- Create workspace_drafts table for live collaborative real-time editing
+create table if not exists workspace_drafts (
+  workspace_id text primary key,
+  draft_data jsonb not null,
+  last_edited_by text default 'Team Member',
+  updated_at timestamptz default now()
+);
+
+alter table workspace_drafts enable row level security;
+create policy "Allow all operations for workspace_drafts"
+  on workspace_drafts
+  for all
+  using (true)
+  with check (true);
+
+-- Create workspace_activity table for collaborative activity log
+create table if not exists workspace_activity (
+  id uuid default gen_random_uuid() primary key,
+  workspace_id text not null,
+  user_id text not null,
+  user_label text not null,
+  action text not null,
+  details text not null,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_workspace_activity_ws on workspace_activity(workspace_id, created_at desc);
+
+alter table workspace_activity enable row level security;
+create policy "Allow all operations for workspace_activity"
+  on workspace_activity
+  for all
+  using (true)
+  with check (true);
