@@ -50,7 +50,10 @@ export function setWorkspaceId(workspaceId) {
 }
 
 /**
- * Get locally persisted history list from localStorage
+ * Get locally persisted history list from localStorage.
+ * If targetClientId is the user's personal ID, returns all invoices personally created by this user
+ * (including those generated while in a shared workspace).
+ * If targetClientId is a team workspace, returns invoices tagged for that workspace.
  */
 export function getLocalHistory(targetClientId = null) {
   try {
@@ -59,7 +62,12 @@ export function getLocalHistory(targetClientId = null) {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
       const items = targetClientId
-        ? parsed.filter((item) => !item.clientId || item.clientId === targetClientId)
+        ? parsed.filter(
+            (item) =>
+              item.clientId === targetClientId ||
+              item.workspaceId === targetClientId ||
+              (!item.clientId && !item.workspaceId)
+          )
         : parsed;
       return items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
     }
@@ -75,11 +83,13 @@ export function getLocalHistory(targetClientId = null) {
 export function addLocalHistoryEntry(entry) {
   if (!entry || !entry.name) return;
   try {
-    const activeClientId = getWorkspaceId();
+    const myClientId = getClientId();
+    const activeWorkspaceId = getWorkspaceId();
     const current = getLocalHistory();
     // Check if item with this name already exists
     const existingIndex = current.findIndex((item) => item.name === entry.name);
 
+    const targetWs = entry.workspaceId || entry.clientId || activeWorkspaceId;
     const formattedEntry = {
       name: entry.name,
       format: entry.format || (entry.name.endsWith('.pdf') ? 'pdf' : 'xlsx'),
@@ -87,7 +97,10 @@ export function addLocalHistoryEntry(entry) {
       createdAt: entry.createdAt || new Date().toISOString(),
       hasMetadata: Boolean(entry.hasMetadata || entry.invoiceData),
       invoiceData: entry.invoiceData || null,
-      clientId: entry.clientId || activeClientId,
+      creatorId: entry.creatorId || myClientId,
+      workspaceId: targetWs,
+      clientId: targetWs,
+      isCreatedByMe: entry.isCreatedByMe !== undefined ? entry.isCreatedByMe : true,
     };
 
     let updated;
@@ -126,19 +139,22 @@ export function removeLocalHistoryEntry(filename) {
  */
 export function mergeServerAndLocalHistory(serverItems = [], localItems = []) {
   const mergedMap = new Map();
-  const activeClientId = getWorkspaceId();
+  const myClientId = getClientId();
+  const activeWorkspaceId = getWorkspaceId();
 
   // 1. Add all local items first
   localItems.forEach((local) => {
     if (local && local.name) {
       mergedMap.set(local.name, {
         ...local,
-        clientId: local.clientId || activeClientId,
+        creatorId: local.creatorId || myClientId,
+        workspaceId: local.workspaceId || activeWorkspaceId,
+        clientId: local.clientId || activeWorkspaceId,
       });
     }
   });
 
-  // 2. Merge server items (preserve local invoiceData if server item lacks it)
+  // 2. Merge server items
   serverItems.forEach((server) => {
     if (!server || !server.name) return;
     const existing = mergedMap.get(server.name);
@@ -147,7 +163,10 @@ export function mergeServerAndLocalHistory(serverItems = [], localItems = []) {
         ...server,
         invoiceData: existing.invoiceData || server.invoiceData || null,
         hasMetadata: existing.hasMetadata || server.hasMetadata,
-        clientId: existing.clientId || server.clientId || activeClientId,
+        creatorId: existing.creatorId || server.creator_id || null,
+        workspaceId: existing.workspaceId || server.client_id || activeWorkspaceId,
+        clientId: existing.clientId || server.client_id || activeWorkspaceId,
+        isCreatedByMe: existing.isCreatedByMe || false,
       });
     } else {
       mergedMap.set(server.name, {
@@ -157,7 +176,10 @@ export function mergeServerAndLocalHistory(serverItems = [], localItems = []) {
         createdAt: server.createdAt || new Date().toISOString(),
         hasMetadata: Boolean(server.hasMetadata),
         invoiceData: null,
-        clientId: server.clientId || activeClientId,
+        creatorId: server.creator_id || null,
+        workspaceId: server.client_id || activeWorkspaceId,
+        clientId: server.client_id || activeWorkspaceId,
+        isCreatedByMe: false,
       });
     }
   });
