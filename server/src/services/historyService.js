@@ -1,6 +1,13 @@
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
+const {
+  isSupabaseConfigured,
+  saveInvoiceToSupabase,
+  getHistoryListFromSupabase,
+  getInvoiceMetadataFromSupabase,
+  deleteInvoiceFromSupabase,
+} = require('./supabaseService');
 
 const HISTORY_DIR = path.join(__dirname, '..', '..', 'history');
 
@@ -25,8 +32,10 @@ async function saveInvoice(format, invoiceData, buffer, clientId = 'default') {
   const safeClientId = sanitizeSegment(clientId || invoiceData.clientId, 'default', 50);
   const targetDir = await ensureHistoryDir(safeClientId);
 
-  const invoiceNum = sanitizeSegment(invoiceData.header?.invoiceNum, 'draft', 30);
-  const clientName = sanitizeSegment(invoiceData.header?.clientName, 'client', 30);
+  const rawInvoiceNum = invoiceData.header?.invoiceNum || 'draft';
+  const rawClientName = invoiceData.header?.clientName || 'client';
+  const invoiceNum = sanitizeSegment(rawInvoiceNum, 'draft', 30);
+  const clientName = sanitizeSegment(rawClientName, 'client', 30);
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = path.basename(`invoice-${invoiceNum}-${clientName}-${timestamp}.${format}`);
 
@@ -38,11 +47,42 @@ async function saveInvoice(format, invoiceData, buffer, clientId = 'default') {
   const sidecarPath = `${filePath}.json`;
   await fs.writeFile(sidecarPath, JSON.stringify({ ...formData, clientId: safeClientId }, null, 2), 'utf-8');
 
+  // Cloud Persistence via Supabase (if configured)
+  if (isSupabaseConfigured()) {
+    try {
+      await saveInvoiceToSupabase({
+        filename,
+        clientId: safeClientId,
+        invoiceNum: String(rawInvoiceNum),
+        clientName: String(rawClientName),
+        format,
+        size: buffer ? buffer.length : 0,
+        invoiceData: formData,
+      });
+    } catch (sbErr) {
+      console.warn('[Supabase Sync Error]:', sbErr.message);
+    }
+  }
+
   return { filename, filePath, clientId: safeClientId };
 }
 
 async function getHistoryList(clientId = 'default') {
   const safeClientId = sanitizeSegment(clientId, 'default', 50);
+
+  // 1. Try fetching from Supabase Cloud DB first
+  if (isSupabaseConfigured()) {
+    try {
+      const cloudItems = await getHistoryListFromSupabase(safeClientId);
+      if (Array.isArray(cloudItems) && cloudItems.length > 0) {
+        return cloudItems;
+      }
+    } catch (err) {
+      console.warn('[Supabase Fetch Notice]:', err.message);
+    }
+  }
+
+  // 2. Fallback to local container disk
   const clientDir = await ensureHistoryDir(safeClientId);
 
   let allFiles = [];
@@ -104,14 +144,32 @@ async function findHistoryFilePath(filename, clientId = 'default') {
 }
 
 async function getInvoiceMetadata(filename, clientId = 'default') {
-  const filePath = await findHistoryFilePath(filename, clientId);
+  const safeClientId = sanitizeSegment(clientId, 'default', 50);
+
+  // 1. Try Supabase first
+  if (isSupabaseConfigured()) {
+    try {
+      const cloudData = await getInvoiceMetadataFromSupabase(filename, safeClientId);
+      if (cloudData) {
+        return cloudData;
+      }
+    } catch (err) {
+      console.warn('[Supabase Metadata Notice]:', err.message);
+    }
+  }
+
+  // 2. Fallback to local sidecar file
+  const filePath = await findHistoryFilePath(filename, safeClientId);
   const sidecarPath = `${filePath}.json`;
   const raw = await fs.readFile(sidecarPath, 'utf-8');
   return JSON.parse(raw);
 }
 
 async function deleteHistoryFile(filename, clientId = 'default') {
-  const filePath = await findHistoryFilePath(filename, clientId);
+  const safeClientId = sanitizeSegment(clientId, 'default', 50);
+
+  // Delete from local disk
+  const filePath = await findHistoryFilePath(filename, safeClientId);
   if (fsSync.existsSync(filePath)) {
     await fs.unlink(filePath);
   }
@@ -123,6 +181,15 @@ async function deleteHistoryFile(filename, clientId = 'default') {
     }
   } catch {
     // Sidecar may not exist for older files — ignore
+  }
+
+  // Delete from Supabase
+  if (isSupabaseConfigured()) {
+    try {
+      await deleteInvoiceFromSupabase(filename, safeClientId);
+    } catch (sbErr) {
+      console.warn('[Supabase Delete Notice]:', sbErr.message);
+    }
   }
 }
 

@@ -12,7 +12,9 @@
     "test": "jest"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
     "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
     "express": "^4.21.0",
     "puppeteer": "^23.4.0",
