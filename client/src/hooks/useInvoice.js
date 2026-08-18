@@ -5,7 +5,9 @@ import {
   broadcastLiveDraftUpdate,
   broadcastPresenceHeartbeat,
   subscribeToLiveWorkspaceSync,
+  subscribeToLiveWorkspaceFiles,
   subscribeToWorkspacePresence,
+  fetchRemoteWorkspaceFileDraft,
   shouldApplyRemoteDraft,
 } from '../services/workspaceLiveSync';
 import {
@@ -19,6 +21,7 @@ import {
   renameWorkspaceFile as storeRenameWorkspaceFile,
   deleteWorkspaceFile as storeDeleteWorkspaceFile,
   subscribeToWorkspaceFiles,
+  syncWorkspaceFilesWithServer,
 } from '../services/workspaceFilesStore';
 
 let nextSectionId = 2;
@@ -137,15 +140,23 @@ export function useInvoice() {
   const lastSavedRef = useRef(lastSaved);
   lastSavedRef.current = lastSaved;
 
-  // Listen to external workspace file list changes
+  // Listen to external workspace file list changes and server sync
   useEffect(() => {
-    const unsub = subscribeToWorkspaceFiles(activeWorkspaceId, ({ files, activeFileId: newActiveId }) => {
+    const unsubLocal = subscribeToWorkspaceFiles(activeWorkspaceId, ({ files, activeFileId: newActiveId }) => {
       setWorkspaceFiles(files);
       if (newActiveId && newActiveId !== activeFileId) {
         setActiveFileIdState(newActiveId);
       }
     });
-    return () => unsub();
+
+    const unsubLive = subscribeToLiveWorkspaceFiles(activeWorkspaceId, (files) => {
+      setWorkspaceFiles(getWorkspaceFiles(activeWorkspaceId));
+    });
+
+    return () => {
+      unsubLocal();
+      unsubLive();
+    };
   }, [activeWorkspaceId, activeFileId]);
 
   // Bulk-load saved invoice data into form
@@ -225,6 +236,23 @@ export function useInvoice() {
       loadInvoice(target.draft);
       setLastSaved(target.draft.updatedAt ? new Date(target.draft.updatedAt) : new Date());
       setIsRestoredFromDraft(true);
+    } else if (target) {
+      // If draft not in local cache, fetch from server
+      fetchRemoteWorkspaceFileDraft(activeWorkspaceId, targetFileId).then((remoteData) => {
+        if (remoteData && remoteData.draft) {
+          loadInvoice(remoteData.draft);
+          setLastSaved(remoteData.updatedAt ? new Date(remoteData.updatedAt) : new Date());
+          setIsRestoredFromDraft(true);
+        }
+      }).catch(() => {});
+
+      setHeader(DEFAULT_HEADER);
+      setEventDetails(DEFAULT_EVENT_DETAILS);
+      setSections(DEFAULT_SECTIONS);
+      setTaxRate(0);
+      setNotes('');
+      setLastSaved(null);
+      setIsRestoredFromDraft(false);
     } else {
       // Blank default for this file
       setHeader(DEFAULT_HEADER);

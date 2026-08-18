@@ -4,7 +4,24 @@ import { getUserDisplayLabel } from './workspaceCollabStore';
 const WS_FILES_PREFIX = 'ivory_gold_ws_files_v1_';
 const WS_ACTIVE_FILE_PREFIX = 'ivory_gold_ws_active_file_v1_';
 const LEGACY_DRAFT_KEY = 'ivory_gold_invoice_draft_v1';
-const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const RAW_API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+
+function getApiUrl(path) {
+  if (RAW_API_URL) return `${RAW_API_URL}${path}`;
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}${path}`;
+  }
+  return `http://localhost:3001${path}`;
+}
+
+let broadcastChannel = null;
+try {
+  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+    broadcastChannel = new BroadcastChannel('ivory_gold_live_workspace_sync_v2');
+  }
+} catch {
+  // ignore
+}
 
 // In-memory event bus for workspace files updates
 const listeners = new Map(); // Map<workspaceId, Set<callback>>
@@ -22,6 +39,34 @@ function notifyListeners(workspaceId) {
       }
     });
   }
+}
+
+function broadcastFilesListChanged(workspaceId, files) {
+  if (!broadcastChannel || !workspaceId || workspaceId.startsWith('user_')) return;
+  try {
+    broadcastChannel.postMessage({
+      type: 'WORKSPACE_FILES_CHANGED',
+      workspaceId,
+      files,
+      timestamp: Date.now(),
+    });
+  } catch (e) {
+    console.warn('Failed to broadcast files change:', e);
+  }
+}
+
+// Listen for broadcast file changes from other tabs/windows
+if (broadcastChannel) {
+  broadcastChannel.addEventListener('message', (event) => {
+    const data = event.data;
+    if (data && data.type === 'WORKSPACE_FILES_CHANGED' && data.workspaceId) {
+      if (Array.isArray(data.files)) {
+        mergeAndPersistFiles(data.workspaceId, data.files);
+      } else {
+        syncWorkspaceFilesWithServer(data.workspaceId).catch(() => {});
+      }
+    }
+  });
 }
 
 /**
@@ -161,6 +206,70 @@ function persistFiles(workspaceId, files) {
 }
 
 /**
+ * Merge remote server files with local cache
+ */
+export function mergeAndPersistFiles(workspaceId, incomingFiles = []) {
+  if (!workspaceId || !Array.isArray(incomingFiles) || incomingFiles.length === 0) return;
+  const ws = workspaceId;
+  const current = getWorkspaceFiles(ws);
+  const map = new Map();
+
+  // Load current local files into map
+  current.forEach((f) => {
+    if (f && f.id) map.set(f.id, f);
+  });
+
+  let hasDiff = false;
+  incomingFiles.forEach((incoming) => {
+    if (!incoming || !incoming.id) return;
+    const existing = map.get(incoming.id);
+    if (!existing) {
+      map.set(incoming.id, incoming);
+      hasDiff = true;
+    } else {
+      const inTime = new Date(incoming.updatedAt || 0).getTime();
+      const exTime = new Date(existing.updatedAt || 0).getTime();
+      if (inTime > exTime || (incoming.draft && !existing.draft)) {
+        map.set(incoming.id, {
+          ...existing,
+          ...incoming,
+          draft: incoming.draft || existing.draft,
+        });
+        hasDiff = true;
+      }
+    }
+  });
+
+  if (hasDiff) {
+    const merged = Array.from(map.values());
+    persistFiles(ws, merged);
+    notifyListeners(ws);
+  }
+}
+
+/**
+ * Fetch and sync workspace files from server
+ */
+export async function syncWorkspaceFilesWithServer(workspaceId) {
+  const ws = workspaceId || getWorkspaceId();
+  if (!ws || ws.startsWith('user_')) return getWorkspaceFiles(ws);
+
+  try {
+    const res = await fetch(getApiUrl(`/api/workspace/${encodeURIComponent(ws)}/files`));
+    if (!res.ok) return getWorkspaceFiles(ws);
+    const json = await res.json();
+    const serverFiles = json.files || [];
+    if (serverFiles.length > 0) {
+      mergeAndPersistFiles(ws, serverFiles);
+    }
+    return getWorkspaceFiles(ws);
+  } catch (err) {
+    console.warn('Failed to sync workspace files with server:', err);
+    return getWorkspaceFiles(ws);
+  }
+}
+
+/**
  * Create a new file in workspace and activate it
  */
 export function createWorkspaceFile(workspaceId, initialDraft = null, customName = '', userLabel = '') {
@@ -190,12 +299,15 @@ export function createWorkspaceFile(workspaceId, initialDraft = null, customName
   persistFiles(ws, updated);
   setActiveFileId(ws, fileId);
 
+  // Broadcast instantly to all local tabs
+  broadcastFilesListChanged(ws, updated);
+
   // Sync to server if shared workspace
   if (ws && !ws.startsWith('user_') && ws !== myId) {
-    fetch(`${API_BASE_URL}/api/workspace/${encodeURIComponent(ws)}/files`, {
+    fetch(getApiUrl(`/api/workspace/${encodeURIComponent(ws)}/files`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ initialDraft, lastEditedBy: author, name: calculatedName }),
+      body: JSON.stringify({ id: fileId, initialDraft, lastEditedBy: author, name: calculatedName }),
     }).catch(() => {});
   }
 
@@ -295,6 +407,18 @@ export function renameWorkspaceFile(workspaceId, fileId, newName, userLabel = ''
   if (userLabel) target.lastEditedBy = userLabel;
 
   persistFiles(ws, files);
+  broadcastFilesListChanged(ws, files);
+
+  // Sync to server if shared workspace
+  const myId = getClientId();
+  if (ws && !ws.startsWith('user_') && ws !== myId && target.draft) {
+    fetch(getApiUrl(`/api/workspace/${encodeURIComponent(ws)}/files/${encodeURIComponent(fileId)}/draft`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ draft: target.draft, lastEditedBy: userLabel, name: target.name }),
+    }).catch(() => {});
+  }
+
   notifyListeners(ws);
   return true;
 }
@@ -312,6 +436,7 @@ export function deleteWorkspaceFile(workspaceId, fileId) {
     const reset = [createDefaultFile('doc_main', 'Primary Invoice', null)];
     persistFiles(ws, reset);
     setActiveFileId(ws, 'doc_main');
+    broadcastFilesListChanged(ws, reset);
     notifyListeners(ws);
     return true;
   }
@@ -323,10 +448,12 @@ export function deleteWorkspaceFile(workspaceId, fileId) {
     setActiveFileId(ws, filtered[0].id);
   }
 
+  broadcastFilesListChanged(ws, filtered);
+
   // Delete from server in background
   const myId = getClientId();
   if (ws && !ws.startsWith('user_') && ws !== myId) {
-    fetch(`${API_BASE_URL}/api/workspace/${encodeURIComponent(ws)}/files/${encodeURIComponent(fileId)}`, {
+    fetch(getApiUrl(`/api/workspace/${encodeURIComponent(ws)}/files/${encodeURIComponent(fileId)}`), {
       method: 'DELETE',
     }).catch(() => {});
   }
@@ -358,6 +485,9 @@ export function subscribeToWorkspaceFiles(workspaceId, callback) {
 
   const set = listeners.get(ws);
   set.add(callback);
+
+  // Initial sync with server in background
+  syncWorkspaceFilesWithServer(ws).catch(() => {});
 
   return () => {
     set.delete(callback);

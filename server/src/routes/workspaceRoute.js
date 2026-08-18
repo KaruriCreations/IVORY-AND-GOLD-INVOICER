@@ -29,8 +29,8 @@ router.get('/:workspaceId/files', async (req, res) => {
 router.post('/:workspaceId/files', async (req, res) => {
   try {
     const { workspaceId } = req.params;
-    const { initialDraft, lastEditedBy, name } = req.body || {};
-    const created = await createWorkspaceFile(workspaceId, initialDraft, lastEditedBy, name);
+    const { id, initialDraft, lastEditedBy, name } = req.body || {};
+    const created = await createWorkspaceFile(workspaceId, initialDraft, lastEditedBy, name, id);
     res.json({ success: true, data: created });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

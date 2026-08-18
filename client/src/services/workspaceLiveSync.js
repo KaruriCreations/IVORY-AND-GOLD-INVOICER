@@ -1,4 +1,12 @@
-const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const RAW_API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+
+function getApiUrl(path) {
+  if (RAW_API_URL) return `${RAW_API_URL}${path}`;
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}${path}`;
+  }
+  return `http://localhost:3001${path}`;
+}
 
 let broadcastChannel = null;
 try {
@@ -37,7 +45,7 @@ export async function pushRemoteWorkspaceDraft(workspaceId, fileId, draft, userL
   const timer = setTimeout(async () => {
     try {
       await fetch(
-        `${API_BASE_URL}/api/workspace/${encodeURIComponent(workspaceId)}/files/${encodeURIComponent(fileId)}/draft`,
+        getApiUrl(`/api/workspace/${encodeURIComponent(workspaceId)}/files/${encodeURIComponent(fileId)}/draft`),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -110,7 +118,7 @@ export function broadcastPresenceHeartbeat({ workspaceId, fileId, userId, userLa
   }
 
   // Also send heartbeat to server in background
-  fetch(`${API_BASE_URL}/api/workspace/${encodeURIComponent(workspaceId)}/presence`, {
+  fetch(getApiUrl(`/api/workspace/${encodeURIComponent(workspaceId)}/presence`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId, userLabel, fileId: fileId || 'doc_main' }),
@@ -125,7 +133,7 @@ export function broadcastPresenceHeartbeat({ workspaceId, fileId, userId, userLa
 export async function fetchRemoteWorkspaceFiles(workspaceId) {
   if (!workspaceId || workspaceId.startsWith('user_')) return [];
   try {
-    const res = await fetch(`${API_BASE_URL}/api/workspace/${encodeURIComponent(workspaceId)}/files`);
+    const res = await fetch(getApiUrl(`/api/workspace/${encodeURIComponent(workspaceId)}/files`));
     if (!res.ok) return [];
     const json = await res.json();
     return json.files || [];
@@ -142,7 +150,7 @@ export async function fetchRemoteWorkspaceFileDraft(workspaceId, fileId) {
   if (!workspaceId || workspaceId.startsWith('user_') || !fileId) return null;
   try {
     const res = await fetch(
-      `${API_BASE_URL}/api/workspace/${encodeURIComponent(workspaceId)}/files/${encodeURIComponent(fileId)}/draft`
+      getApiUrl(`/api/workspace/${encodeURIComponent(workspaceId)}/files/${encodeURIComponent(fileId)}/draft`)
     );
     if (!res.ok) return null;
     const json = await res.json();
@@ -208,6 +216,52 @@ export function subscribeToLiveWorkspaceSync(workspaceId, activeFileId, onRemote
 }
 
 /**
+ * Subscribe to live workspace files list changes (across tabs and server machines)
+ */
+export function subscribeToLiveWorkspaceFiles(workspaceId, onFilesUpdate) {
+  if (!workspaceId || workspaceId.startsWith('user_') || typeof onFilesUpdate !== 'function') {
+    return () => {};
+  }
+
+  // 1. BroadcastChannel listener for instant cross-tab updates
+  const handleBroadcast = (event) => {
+    const data = event.data;
+    if (data && data.type === 'WORKSPACE_FILES_CHANGED' && data.workspaceId === workspaceId) {
+      if (Array.isArray(data.files)) {
+        mergeAndPersistFiles(workspaceId, data.files);
+        onFilesUpdate(data.files);
+      }
+    }
+  };
+
+  if (broadcastChannel) {
+    broadcastChannel.addEventListener('message', handleBroadcast);
+  }
+
+  // 2. Initial fetch & periodic server polling for files created by peers on other machines
+  let isMounted = true;
+  const pollFiles = async () => {
+    if (!isMounted) return;
+    const remoteFiles = await fetchRemoteWorkspaceFiles(workspaceId);
+    if (isMounted && Array.isArray(remoteFiles) && remoteFiles.length > 0) {
+      mergeAndPersistFiles(workspaceId, remoteFiles);
+      onFilesUpdate(remoteFiles);
+    }
+  };
+
+  pollFiles();
+  const pollInterval = setInterval(pollFiles, 3000);
+
+  return () => {
+    isMounted = false;
+    clearInterval(pollInterval);
+    if (broadcastChannel) {
+      broadcastChannel.removeEventListener('message', handleBroadcast);
+    }
+  };
+}
+
+/**
  * Subscribe to workspace presence updates
  */
 export function subscribeToWorkspacePresence(workspaceId, onPresenceUpdate, myUserId) {
@@ -231,7 +285,7 @@ export function subscribeToWorkspacePresence(workspaceId, onPresenceUpdate, myUs
   const pollPresence = async () => {
     if (!isMounted) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/workspace/${encodeURIComponent(workspaceId)}/presence`);
+      const res = await fetch(getApiUrl(`/api/workspace/${encodeURIComponent(workspaceId)}/presence`));
       if (res.ok && isMounted) {
         const json = await res.json();
         if (json.active) {

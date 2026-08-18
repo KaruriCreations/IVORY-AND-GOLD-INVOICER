@@ -37,7 +37,7 @@ function ensureWorkspaceFiles(workspaceId) {
 }
 
 /**
- * Get list of all files in workspace with summary metadata
+ * Get list of all files in workspace with summary metadata and draft data
  */
 async function getWorkspaceFiles(workspaceId) {
   if (!workspaceId) return [];
@@ -55,6 +55,7 @@ async function getWorkspaceFiles(workspaceId) {
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
       hasDraft: Boolean(file.draft),
+      draft: file.draft || null,
       activeUsers,
     };
   });
@@ -157,12 +158,12 @@ async function updateWorkspaceFileDraft(workspaceId, fileId, draftData, userLabe
 }
 
 /**
- * Create a brand new file in workspace
+ * Create a brand new file in workspace (preserves custom ID if supplied by client)
  */
-async function createWorkspaceFile(workspaceId, initialDraft = null, userLabel = 'Team Member', fileName = '') {
+async function createWorkspaceFile(workspaceId, initialDraft = null, userLabel = 'Team Member', fileName = '', customId = null) {
   if (!workspaceId) return null;
   const filesMap = ensureWorkspaceFiles(workspaceId);
-  const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const fileId = customId || `file_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const now = new Date().toISOString();
 
   const clientName = initialDraft?.header?.clientName?.trim() || '';
