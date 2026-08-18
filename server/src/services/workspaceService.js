@@ -191,6 +191,8 @@ async function createWorkspaceFile(workspaceId, initialDraft = null, userLabel =
 async function deleteWorkspaceFile(workspaceId, fileId) {
   if (!workspaceId || !fileId) return false;
   const filesMap = ensureWorkspaceFiles(workspaceId);
+  
+  let deleted = false;
   if (filesMap.size <= 1) {
     // If only one file left, clear draft instead of deleting completely
     const onlyFile = filesMap.get(fileId);
@@ -198,11 +200,24 @@ async function deleteWorkspaceFile(workspaceId, fileId) {
       onlyFile.draft = null;
       onlyFile.name = 'Primary Invoice';
       onlyFile.updatedAt = new Date().toISOString();
-      return true;
+      deleted = true;
     }
-    return false;
+  } else {
+    deleted = filesMap.delete(fileId);
   }
-  return filesMap.delete(fileId);
+
+  // Clear presence entries for the deleted file
+  const presenceMap = memoryWorkspacePresence.get(workspaceId);
+  if (presenceMap) {
+    for (const [userId, entry] of presenceMap.entries()) {
+      if (entry.fileId === fileId) {
+        const remaining = Array.from(filesMap.keys());
+        entry.fileId = remaining[0] || 'doc_main';
+      }
+    }
+  }
+
+  return deleted;
 }
 
 /**

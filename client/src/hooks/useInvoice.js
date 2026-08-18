@@ -140,25 +140,6 @@ export function useInvoice() {
   const lastSavedRef = useRef(lastSaved);
   lastSavedRef.current = lastSaved;
 
-  // Listen to external workspace file list changes and server sync
-  useEffect(() => {
-    const unsubLocal = subscribeToWorkspaceFiles(activeWorkspaceId, ({ files, activeFileId: newActiveId }) => {
-      setWorkspaceFiles(files);
-      if (newActiveId && newActiveId !== activeFileId) {
-        setActiveFileIdState(newActiveId);
-      }
-    });
-
-    const unsubLive = subscribeToLiveWorkspaceFiles(activeWorkspaceId, (files) => {
-      setWorkspaceFiles(getWorkspaceFiles(activeWorkspaceId));
-    });
-
-    return () => {
-      unsubLocal();
-      unsubLive();
-    };
-  }, [activeWorkspaceId, activeFileId]);
-
   // Bulk-load saved invoice data into form
   const loadInvoice = useCallback((data) => {
     if (!data) return;
@@ -208,6 +189,44 @@ export function useInvoice() {
     setNotes(data.notes || '');
     setIsRestoredFromDraft(false);
   }, []);
+
+  // Reset current invoice form
+  const resetInvoice = useCallback(() => {
+    setHeader(DEFAULT_HEADER);
+    setEventDetails(DEFAULT_EVENT_DETAILS);
+    setSections(DEFAULT_SECTIONS);
+    setTaxRate(0);
+    setNotes('');
+    setLastSaved(null);
+    setIsRestoredFromDraft(false);
+
+    updateWorkspaceFileDraft(activeWorkspaceId, activeFileId, null, getUserDisplayLabel(myClientId));
+  }, [activeWorkspaceId, activeFileId, myClientId]);
+
+  // Listen to external workspace file list changes and server sync
+  useEffect(() => {
+    const unsubLocal = subscribeToWorkspaceFiles(activeWorkspaceId, ({ files, activeFileId: newActiveId }) => {
+      setWorkspaceFiles(files);
+      if (newActiveId && newActiveId !== activeFileId) {
+        setActiveFileIdState(newActiveId);
+        const target = files.find((f) => f.id === newActiveId);
+        if (target && target.draft) {
+          loadInvoice(target.draft);
+          setLastSaved(target.draft.updatedAt ? new Date(target.draft.updatedAt) : new Date());
+          setIsRestoredFromDraft(true);
+        }
+      }
+    });
+
+    const unsubLive = subscribeToLiveWorkspaceFiles(activeWorkspaceId, (files) => {
+      setWorkspaceFiles(getWorkspaceFiles(activeWorkspaceId));
+    });
+
+    return () => {
+      unsubLocal();
+      unsubLive();
+    };
+  }, [activeWorkspaceId, activeFileId, loadInvoice]);
 
   // Switch to another file in the workspace
   const switchFile = useCallback((targetFileId) => {
@@ -478,19 +497,6 @@ export function useInvoice() {
       unsubPresence();
     };
   }, [activeWorkspaceId, activeFileId, isSharedWorkspace, myClientId]);
-
-  // Reset current invoice form
-  const resetInvoice = useCallback(() => {
-    setHeader(DEFAULT_HEADER);
-    setEventDetails(DEFAULT_EVENT_DETAILS);
-    setSections(DEFAULT_SECTIONS);
-    setTaxRate(0);
-    setNotes('');
-    setLastSaved(null);
-    setIsRestoredFromDraft(false);
-
-    updateWorkspaceFileDraft(activeWorkspaceId, activeFileId, null, getUserDisplayLabel(myClientId));
-  }, [activeWorkspaceId, activeFileId, myClientId]);
 
   const clearDraft = useCallback(() => {
     resetInvoice();

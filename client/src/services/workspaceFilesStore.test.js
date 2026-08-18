@@ -145,4 +145,24 @@ describe('workspaceFilesStore - Multi-File Workspace Engine', () => {
 
     unsub();
   });
+
+  test('authoritative server sync removes files deleted by peers and updates active file if needed', () => {
+    const file1 = createWorkspaceFile('team-sync', null, 'Keep Me');
+    const file2 = createWorkspaceFile('team-sync', null, 'Delete Remotely');
+
+    expect(getWorkspaceFiles('team-sync').length).toBe(3); // doc_main + file1 + file2
+    expect(getActiveFileId('team-sync')).toBe(file2.id);
+
+    // Simulate server returning only [doc_main, file1] (file2 was deleted by peer)
+    const current = getWorkspaceFiles('team-sync');
+    const serverFiles = current.filter((f) => f.id !== file2.id);
+
+    import('./workspaceFilesStore').then(({ mergeAndPersistFiles }) => {
+      mergeAndPersistFiles('team-sync', serverFiles, true);
+      const after = getWorkspaceFiles('team-sync');
+      expect(after.length).toBe(2);
+      expect(after.some((f) => f.id === file2.id)).toBe(false);
+      expect(getActiveFileId('team-sync')).toBe(after[0].id);
+    });
+  });
 });

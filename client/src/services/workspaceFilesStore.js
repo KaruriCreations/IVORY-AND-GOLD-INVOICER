@@ -206,43 +206,59 @@ function persistFiles(workspaceId, files) {
 }
 
 /**
- * Merge remote server files with local cache
+ * Merge remote server files with local cache (authoritative deletion and addition)
  */
-export function mergeAndPersistFiles(workspaceId, incomingFiles = []) {
+export function mergeAndPersistFiles(workspaceId, incomingFiles = [], isAuthoritative = false) {
   if (!workspaceId || !Array.isArray(incomingFiles) || incomingFiles.length === 0) return;
   const ws = workspaceId;
   const current = getWorkspaceFiles(ws);
-  const map = new Map();
+  const activeId = getActiveFileId(ws);
 
-  // Load current local files into map
-  current.forEach((f) => {
-    if (f && f.id) map.set(f.id, f);
-  });
+  if (isAuthoritative) {
+    // Authoritative sync from server: remote files is the canonical list
+    const serverMap = new Map(incomingFiles.map((f) => [f.id, f]));
+    const updatedList = incomingFiles.map((sf) => {
+      const local = current.find((lf) => lf.id === sf.id);
+      if (!local) return sf;
+      const sTime = new Date(sf.updatedAt || 0).getTime();
+      const lTime = new Date(local.updatedAt || 0).getTime();
+      if (lTime > sTime && local.draft) {
+        return { ...sf, ...local };
+      }
+      return { ...local, ...sf, draft: sf.draft || local.draft };
+    });
 
-  let hasDiff = false;
-  incomingFiles.forEach((incoming) => {
-    if (!incoming || !incoming.id) return;
-    const existing = map.get(incoming.id);
-    if (!existing) {
-      map.set(incoming.id, incoming);
-      hasDiff = true;
+    const wasActiveFileDeleted = !serverMap.has(activeId);
+    persistFiles(ws, updatedList);
+
+    if (wasActiveFileDeleted && updatedList.length > 0) {
+      setActiveFileId(ws, updatedList[0].id);
     } else {
-      const inTime = new Date(incoming.updatedAt || 0).getTime();
-      const exTime = new Date(existing.updatedAt || 0).getTime();
-      if (inTime > exTime || (incoming.draft && !existing.draft)) {
-        map.set(incoming.id, {
-          ...existing,
-          ...incoming,
-          draft: incoming.draft || existing.draft,
-        });
-        hasDiff = true;
+      notifyListeners(ws);
+    }
+    return;
+  }
+
+  // Non-authoritative / broadcast merge
+  const map = new Map();
+  incomingFiles.forEach((incoming) => {
+    if (incoming && incoming.id) {
+      const existing = current.find((c) => c.id === incoming.id);
+      if (existing) {
+        map.set(incoming.id, { ...existing, ...incoming, draft: incoming.draft || existing.draft });
+      } else {
+        map.set(incoming.id, incoming);
       }
     }
   });
 
-  if (hasDiff) {
-    const merged = Array.from(map.values());
-    persistFiles(ws, merged);
+  const merged = Array.from(map.values());
+  const wasActiveDeleted = !map.has(activeId);
+  persistFiles(ws, merged);
+
+  if (wasActiveDeleted && merged.length > 0) {
+    setActiveFileId(ws, merged[0].id);
+  } else {
     notifyListeners(ws);
   }
 }
@@ -260,7 +276,7 @@ export async function syncWorkspaceFilesWithServer(workspaceId) {
     const json = await res.json();
     const serverFiles = json.files || [];
     if (serverFiles.length > 0) {
-      mergeAndPersistFiles(ws, serverFiles);
+      mergeAndPersistFiles(ws, serverFiles, true);
     }
     return getWorkspaceFiles(ws);
   } catch (err) {
