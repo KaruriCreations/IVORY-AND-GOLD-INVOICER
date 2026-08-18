@@ -38,10 +38,15 @@ export function getWorkspaceId() {
 export function setWorkspaceId(workspaceId) {
   try {
     if (typeof window !== 'undefined') {
+      const oldId = localStorage.getItem(WORKSPACE_KEY) || getClientId();
+      const newId = workspaceId && workspaceId.trim() ? workspaceId.trim() : getClientId();
       if (workspaceId && workspaceId.trim()) {
-        localStorage.setItem(WORKSPACE_KEY, workspaceId.trim());
+        localStorage.setItem(WORKSPACE_KEY, newId);
       } else {
         localStorage.removeItem(WORKSPACE_KEY);
+      }
+      if (oldId !== newId) {
+        window.dispatchEvent(new CustomEvent('workspace-changed', { detail: { workspaceId: newId } }));
       }
     }
   } catch {

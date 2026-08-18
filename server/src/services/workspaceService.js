@@ -79,10 +79,11 @@ async function getWorkspaceFileDraft(workspaceId, fileId) {
     };
   }
 
-  // Fallback for primary doc if Supabase is configured
-  if (fileId === 'doc_main' && isSupabaseConfigured()) {
+  // Fallback to Supabase if configured and not cached in memory
+  if (isSupabaseConfigured()) {
     try {
-      const cloudDraft = await getWorkspaceDraftFromSupabase(workspaceId);
+      const cloudKey = fileId === 'doc_main' ? workspaceId : `${workspaceId}__${fileId}`;
+      const cloudDraft = await getWorkspaceDraftFromSupabase(cloudKey);
       if (cloudDraft && cloudDraft.draft) {
         if (file) {
           file.draft = cloudDraft.draft;
@@ -91,8 +92,8 @@ async function getWorkspaceFileDraft(workspaceId, fileId) {
         }
         return {
           workspaceId,
-          fileId: 'doc_main',
-          name: file?.name || 'Primary Invoice',
+          fileId,
+          name: file?.name || 'Invoice File',
           draft: cloudDraft.draft,
           lastEditedBy: cloudDraft.lastEditedBy,
           updatedAt: cloudDraft.updatedAt,
@@ -140,10 +141,11 @@ async function updateWorkspaceFileDraft(workspaceId, fileId, draftData, userLabe
     file.updatedAt = now;
   }
 
-  // If primary document, also sync to Supabase if configured
-  if (fileId === 'doc_main' && isSupabaseConfigured()) {
-    saveWorkspaceDraftToSupabase(workspaceId, draftData, userLabel).catch((err) => {
-      console.warn('[Workspace Draft Sync Notice]:', err.message);
+  // Sync draft to Supabase for persistent cloud storage
+  if (isSupabaseConfigured()) {
+    const cloudKey = fileId === 'doc_main' ? workspaceId : `${workspaceId}__${fileId}`;
+    saveWorkspaceDraftToSupabase(cloudKey, draftData, userLabel).catch((err) => {
+      console.warn('[Workspace Draft Cloud Sync Notice]:', err.message);
     });
   }
 

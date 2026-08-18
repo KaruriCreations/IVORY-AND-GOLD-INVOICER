@@ -222,10 +222,10 @@ export function mergeAndPersistFiles(workspaceId, incomingFiles = [], isAuthorit
       if (!local) return sf;
       const sTime = new Date(sf.updatedAt || 0).getTime();
       const lTime = new Date(local.updatedAt || 0).getTime();
-      if (lTime > sTime && local.draft) {
-        return { ...sf, ...local };
+      if (sTime >= lTime || !local.draft) {
+        return { ...local, ...sf, draft: sf.draft || local.draft };
       }
-      return { ...local, ...sf, draft: sf.draft || local.draft };
+      return { ...sf, ...local, draft: local.draft || sf.draft };
     });
 
     const wasActiveFileDeleted = !serverMap.has(activeId);

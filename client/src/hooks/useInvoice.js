@@ -84,7 +84,7 @@ function hasMeaningfulData(draft) {
 }
 
 export function useInvoice() {
-  const activeWorkspaceId = getWorkspaceId();
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState(() => getWorkspaceId());
   const myClientId = getClientId();
   const isSharedWorkspace = activeWorkspaceId !== myClientId && !activeWorkspaceId.startsWith('user_');
 
@@ -203,6 +203,37 @@ export function useInvoice() {
     updateWorkspaceFileDraft(activeWorkspaceId, activeFileId, null, getUserDisplayLabel(myClientId));
   }, [activeWorkspaceId, activeFileId, myClientId]);
 
+  // Listen to workspace switches from Header / WorkspaceModal
+  useEffect(() => {
+    const handleWsChanged = (e) => {
+      const nextWs = e?.detail?.workspaceId || getWorkspaceId();
+      setActiveWorkspaceId(nextWs);
+      const wsFiles = getWorkspaceFiles(nextWs);
+      const wsActiveId = getActiveFileId(nextWs);
+      setWorkspaceFiles(wsFiles);
+      setActiveFileIdState(wsActiveId);
+      const activeF = wsFiles.find((f) => f.id === wsActiveId) || wsFiles[0];
+      if (activeF?.draft) {
+        loadInvoice(activeF.draft);
+        setLastSaved(activeF.draft.updatedAt ? new Date(activeF.draft.updatedAt) : null);
+        setIsRestoredFromDraft(true);
+      } else {
+        setHeader(DEFAULT_HEADER);
+        setEventDetails(DEFAULT_EVENT_DETAILS);
+        setSections(DEFAULT_SECTIONS);
+        setTaxRate(0);
+        setNotes('');
+        setLastSaved(null);
+        setIsRestoredFromDraft(false);
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('workspace-changed', handleWsChanged);
+      return () => window.removeEventListener('workspace-changed', handleWsChanged);
+    }
+  }, [loadInvoice]);
+
   // Listen to external workspace file list changes and server sync
   useEffect(() => {
     const unsubLocal = subscribeToWorkspaceFiles(activeWorkspaceId, ({ files, activeFileId: newActiveId }) => {
@@ -255,23 +286,6 @@ export function useInvoice() {
       loadInvoice(target.draft);
       setLastSaved(target.draft.updatedAt ? new Date(target.draft.updatedAt) : new Date());
       setIsRestoredFromDraft(true);
-    } else if (target) {
-      // If draft not in local cache, fetch from server
-      fetchRemoteWorkspaceFileDraft(activeWorkspaceId, targetFileId).then((remoteData) => {
-        if (remoteData && remoteData.draft) {
-          loadInvoice(remoteData.draft);
-          setLastSaved(remoteData.updatedAt ? new Date(remoteData.updatedAt) : new Date());
-          setIsRestoredFromDraft(true);
-        }
-      }).catch(() => {});
-
-      setHeader(DEFAULT_HEADER);
-      setEventDetails(DEFAULT_EVENT_DETAILS);
-      setSections(DEFAULT_SECTIONS);
-      setTaxRate(0);
-      setNotes('');
-      setLastSaved(null);
-      setIsRestoredFromDraft(false);
     } else {
       // Blank default for this file
       setHeader(DEFAULT_HEADER);
@@ -281,6 +295,19 @@ export function useInvoice() {
       setNotes('');
       setLastSaved(null);
       setIsRestoredFromDraft(false);
+    }
+
+    // Always fetch latest authoritative draft from server in shared workspace to ensure 100% freshness
+    if (isSharedWorkspace) {
+      fetchRemoteWorkspaceFileDraft(activeWorkspaceId, targetFileId).then((remoteData) => {
+        if (remoteData && remoteData.draft) {
+          if (getActiveFileId(activeWorkspaceId) === targetFileId) {
+            loadInvoice(remoteData.draft);
+            setLastSaved(remoteData.updatedAt ? new Date(remoteData.updatedAt) : new Date());
+            setIsRestoredFromDraft(true);
+          }
+        }
+      }).catch(() => {});
     }
 
     setLastRemoteEditor(null);

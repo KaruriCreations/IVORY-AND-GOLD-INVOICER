@@ -175,9 +175,16 @@ export function subscribeToLiveWorkspaceSync(workspaceId, activeFileId, onRemote
   const handleBroadcast = (event) => {
     const data = event.data;
     if (data && data.type === 'WORKSPACE_DRAFT_UPDATE' && data.workspaceId === workspaceId) {
-      // Only apply if message is for THIS active file and from another user
-      if (data.fileId === targetFileId && data.userId !== myUserId) {
-        onRemoteDraftUpdate(data);
+      if (data.userId !== myUserId) {
+        // ALWAYS update the background cache of this file in workspaceFilesStore
+        if (data.fileId && data.draft) {
+          updateWorkspaceFileDraft(workspaceId, data.fileId, data.draft, data.userLabel);
+        }
+
+        // Only apply directly to the active editor form if message is for THIS active file
+        if (data.fileId === targetFileId) {
+          onRemoteDraftUpdate(data);
+        }
       }
     }
   };
