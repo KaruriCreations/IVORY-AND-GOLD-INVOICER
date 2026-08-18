@@ -6,6 +6,7 @@ import LineItemsTable from './components/LineItemsTable';
 import ActionBar from './components/ActionBar';
 import Footer from './components/Footer';
 import AmbientLuxuryBackground from './components/ui/AmbientLuxuryBackground';
+import WorkspaceFileBar from './components/ui/WorkspaceFileBar';
 import { useToast } from './components/ui/Toast';
 import { generateDocument } from './services/api';
 import { useInvoice } from './hooks/useInvoice';
@@ -38,12 +39,21 @@ export default function App() {
     isRestoredFromDraft,
     lastRemoteEditor,
     isSharedWorkspace,
+    activeFile,
+    activeFileId,
+    workspaceFiles,
+    presenceList,
+    switchFile,
+    createNewFile,
+    duplicateCurrentFile,
+    renameFile,
+    deleteFile,
   } = useInvoice();
 
   // Notify user when a saved local draft is restored on initial load
   useEffect(() => {
     if (isRestoredFromDraft && !location.state?.invoiceData) {
-      toast.gold('Draft Restored', 'Recovered your active session from local storage.');
+      toast.gold('Draft Restored', `Recovered "${activeFile?.name || 'active invoice'}" from workspace session.`);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -86,11 +96,25 @@ export default function App() {
         }}
         onResetInvoice={handleResetInvoice}
         lastSaved={lastSaved}
+        activeFileName={activeFile?.name}
       />
       <AmbientLuxuryBackground />
 
       <main className="w-full pt-16 bg-surface/50 min-h-screen relative z-10">
-        <div className="flex flex-col w-full max-w-[1440px] mx-auto px-gutter md:px-lg py-xl gap-xl relative">
+        <div className="flex flex-col w-full max-w-[1440px] mx-auto px-gutter md:px-lg py-xl gap-lg md:gap-xl relative">
+          {/* Multi-File Workspace Bar */}
+          <WorkspaceFileBar
+            workspaceFiles={workspaceFiles}
+            activeFileId={activeFileId}
+            activeFile={activeFile}
+            presenceList={presenceList}
+            onSwitchFile={switchFile}
+            onCreateNewFile={createNewFile}
+            onDuplicateFile={duplicateCurrentFile}
+            onRenameFile={renameFile}
+            onDeleteFile={deleteFile}
+          />
+
           <ClientDetails
             header={header}
             updateHeader={updateHeader}
@@ -119,6 +143,7 @@ export default function App() {
             onResetInvoice={resetInvoice}
             lastRemoteEditor={lastRemoteEditor}
             isSharedWorkspace={isSharedWorkspace}
+            activeFileName={activeFile?.name}
           />
         </div>
       </main>

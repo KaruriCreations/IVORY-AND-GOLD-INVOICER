@@ -16,6 +16,7 @@ import {
   setWorkspaceId,
   getClientId,
 } from '../services/historyStore';
+import { importInvoiceToWorkspace } from '../services/workspaceFilesStore';
 import { generateDocument } from '../services/api';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -156,24 +157,27 @@ export default function HistoryPage() {
     triggerSparkle(e);
     try {
       setLoadingEdit(file.name);
-      // If invoiceData is already stored locally, re-edit instantly!
-      if (file.invoiceData) {
-        navigate('/', { state: { invoiceData: file.invoiceData } });
-        return;
+      let invoiceData = file.invoiceData;
+
+      // Fallback: fetch metadata from server if not cached locally
+      if (!invoiceData) {
+        const res = await fetch(
+          `${API_BASE_URL}/api/history/metadata?filename=${encodeURIComponent(file.name)}`,
+          {
+            headers: {
+              'X-Client-Id': currentWorkspaceId,
+            },
+          }
+        );
+        if (!res.ok) throw new Error('Could not load invoice data from server');
+        const json = await res.json();
+        invoiceData = json.data;
       }
 
-      // Fallback: fetch metadata from server
-      const res = await fetch(
-        `${API_BASE_URL}/api/history/metadata?filename=${encodeURIComponent(file.name)}`,
-        {
-          headers: {
-            'X-Client-Id': currentWorkspaceId,
-          },
-        }
-      );
-      if (!res.ok) throw new Error('Could not load invoice data from server');
-      const json = await res.json();
-      navigate('/', { state: { invoiceData: json.data } });
+      if (invoiceData) {
+        importInvoiceToWorkspace(currentWorkspaceId, invoiceData, file.name.replace(/\.(pdf|xlsx)$/i, ''));
+        navigate('/', { state: { invoiceData } });
+      }
     } catch (err) {
       alert(err.message || 'Failed to load invoice for editing');
     } finally {

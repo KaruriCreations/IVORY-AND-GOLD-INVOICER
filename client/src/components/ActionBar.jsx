@@ -10,6 +10,7 @@ export default function ActionBar({
   onResetInvoice,
   lastRemoteEditor,
   isSharedWorkspace,
+  activeFileName,
 }) {
   const [loading, setLoading] = useState(null); // 'xlsx' | 'pdf' | null
   const [error, setError] = useState('');
@@ -55,6 +56,7 @@ export default function ActionBar({
   };
 
   const savedTimeStr = formatSavedTime(lastSaved);
+  const fileLabel = activeFileName ? `"${activeFileName}"` : 'Invoice';
 
   return (
     <section className="mt-4 md:mt-xl flex flex-col md:flex-row justify-between items-center gap-4 py-4 border-t border-outline-variant/30 relative z-10">
@@ -67,20 +69,20 @@ export default function ActionBar({
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#ffd700] opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#ffd700]"></span>
           </span>
-          <p className="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-1.5">
+          <p className="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-1.5 flex-wrap">
             {error ? (
               <span className="text-error font-medium">{error}</span>
             ) : isSharedWorkspace ? (
               <span>
-                <strong className="text-primary font-semibold">Live Workspace Sync</strong>
-                {lastRemoteEditor ? ` (synced from ${lastRemoteEditor})` : savedTimeStr ? ` (${savedTimeStr})` : ''}
+                <strong className="text-primary font-semibold">Live Workspace Sync</strong> ({fileLabel})
+                {lastRemoteEditor ? ` • synced with ${lastRemoteEditor}` : savedTimeStr ? ` • saved ${savedTimeStr}` : ''}
               </span>
             ) : savedTimeStr ? (
               <span>
-                <strong className="text-on-surface font-medium">Draft auto-saved</strong> ({savedTimeStr})
+                <strong className="text-on-surface font-medium">Auto-saved</strong> {fileLabel} ({savedTimeStr})
               </span>
             ) : (
-              'Auto-saves locally as you type.'
+              `Auto-saves ${fileLabel} locally as you type.`
             )}
           </p>
         </div>
@@ -93,7 +95,7 @@ export default function ActionBar({
             title="Clear all fields and start a new blank invoice"
           >
             <span className="material-symbols-outlined text-[15px]">restart_alt</span>
-            <span>Start Fresh</span>
+            <span>Reset Draft</span>
           </button>
         )}
       </div>
@@ -131,4 +133,3 @@ export default function ActionBar({
     </section>
   );
 }
-

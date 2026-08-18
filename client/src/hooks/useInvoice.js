@@ -3,11 +3,23 @@ import { recordWorkspaceActivity, getUserDisplayLabel } from '../services/worksp
 import { getWorkspaceId, getClientId } from '../services/historyStore';
 import {
   broadcastLiveDraftUpdate,
+  broadcastPresenceHeartbeat,
   subscribeToLiveWorkspaceSync,
+  subscribeToWorkspacePresence,
   shouldApplyRemoteDraft,
 } from '../services/workspaceLiveSync';
-
-const DRAFT_STORAGE_KEY = 'ivory_gold_invoice_draft_v1';
+import {
+  getWorkspaceFiles,
+  getActiveFileId,
+  setActiveFileId as storeSetActiveFileId,
+  getActiveWorkspaceFile,
+  createWorkspaceFile,
+  updateWorkspaceFileDraft,
+  duplicateWorkspaceFile as storeDuplicateWorkspaceFile,
+  renameWorkspaceFile as storeRenameWorkspaceFile,
+  deleteWorkspaceFile as storeDeleteWorkspaceFile,
+  subscribeToWorkspaceFiles,
+} from '../services/workspaceFilesStore';
 
 let nextSectionId = 2;
 let nextItemId = 2;
@@ -68,23 +80,21 @@ function hasMeaningfulData(draft) {
   return hasHeader || hasEvent || hasItems || hasNotes;
 }
 
-function loadInitialDraft() {
-  try {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem(DRAFT_STORAGE_KEY) : null;
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object' && hasMeaningfulData(parsed)) {
-      return parsed;
-    }
-  } catch (e) {
-    console.warn('Failed to load draft from localStorage:', e);
-  }
-  return null;
-}
-
 export function useInvoice() {
-  const initialDraftRef = useRef(loadInitialDraft());
-  const initialDraft = initialDraftRef.current;
+  const activeWorkspaceId = getWorkspaceId();
+  const myClientId = getClientId();
+  const isSharedWorkspace = activeWorkspaceId !== myClientId && !activeWorkspaceId.startsWith('user_');
+
+  // Multi-file state
+  const [workspaceFiles, setWorkspaceFiles] = useState(() => getWorkspaceFiles(activeWorkspaceId));
+  const [activeFileId, setActiveFileIdState] = useState(() => getActiveFileId(activeWorkspaceId));
+  const [presenceList, setPresenceList] = useState([]);
+
+  const activeFile = useMemo(() => {
+    return workspaceFiles.find((f) => f.id === activeFileId) || workspaceFiles[0] || null;
+  }, [workspaceFiles, activeFileId]);
+
+  const initialDraft = activeFile?.draft;
 
   const [header, setHeader] = useState(() => initialDraft?.header || DEFAULT_HEADER);
   const [eventDetails, setEventDetails] = useState(() => initialDraft?.eventDetails || DEFAULT_EVENT_DETAILS);
@@ -120,18 +130,25 @@ export function useInvoice() {
   const [taxRate, setTaxRate] = useState(() => (initialDraft ? Number(initialDraft.taxRate) || 0 : 0));
   const [notes, setNotes] = useState(() => initialDraft?.notes || '');
   const [lastSaved, setLastSaved] = useState(() => initialDraft?.updatedAt ? new Date(initialDraft.updatedAt) : null);
-  const [isRestoredFromDraft, setIsRestoredFromDraft] = useState(() => Boolean(initialDraft));
+  const [isRestoredFromDraft, setIsRestoredFromDraft] = useState(() => Boolean(initialDraft && hasMeaningfulData(initialDraft)));
   const [lastRemoteEditor, setLastRemoteEditor] = useState(null);
 
   const isIncomingRemoteUpdate = useRef(false);
   const lastSavedRef = useRef(lastSaved);
   lastSavedRef.current = lastSaved;
 
-  const activeWorkspaceId = getWorkspaceId();
-  const myClientId = getClientId();
-  const isSharedWorkspace = activeWorkspaceId !== myClientId && !activeWorkspaceId.startsWith('user_');
+  // Listen to external workspace file list changes
+  useEffect(() => {
+    const unsub = subscribeToWorkspaceFiles(activeWorkspaceId, ({ files, activeFileId: newActiveId }) => {
+      setWorkspaceFiles(files);
+      if (newActiveId && newActiveId !== activeFileId) {
+        setActiveFileIdState(newActiveId);
+      }
+    });
+    return () => unsub();
+  }, [activeWorkspaceId, activeFileId]);
 
-  // Bulk-load saved invoice data (e.g. from History, Template, or Remote Sync)
+  // Bulk-load saved invoice data into form
   const loadInvoice = useCallback((data) => {
     if (!data) return;
 
@@ -172,6 +189,8 @@ export function useInvoice() {
       nextSectionId = secId;
       nextItemId = itmId;
       setSections(loadedSections);
+    } else {
+      setSections(DEFAULT_SECTIONS);
     }
 
     setTaxRate(Number(data.taxRate) || 0);
@@ -179,7 +198,158 @@ export function useInvoice() {
     setIsRestoredFromDraft(false);
   }, []);
 
-  // Auto-save to localStorage & live broadcast to shared workspace peers
+  // Switch to another file in the workspace
+  const switchFile = useCallback((targetFileId) => {
+    if (!targetFileId || targetFileId === activeFileId) return;
+
+    // 1. Save current active file draft first
+    const now = new Date();
+    const currentDraft = {
+      header,
+      eventDetails,
+      sections,
+      taxRate,
+      notes,
+      updatedAt: now.toISOString(),
+    };
+    updateWorkspaceFileDraft(activeWorkspaceId, activeFileId, currentDraft, getUserDisplayLabel(myClientId));
+
+    // 2. Set new active file in store
+    storeSetActiveFileId(activeWorkspaceId, targetFileId);
+    setActiveFileIdState(targetFileId);
+
+    // 3. Load target file draft
+    const files = getWorkspaceFiles(activeWorkspaceId);
+    const target = files.find((f) => f.id === targetFileId);
+    if (target && target.draft) {
+      loadInvoice(target.draft);
+      setLastSaved(target.draft.updatedAt ? new Date(target.draft.updatedAt) : new Date());
+      setIsRestoredFromDraft(true);
+    } else {
+      // Blank default for this file
+      setHeader(DEFAULT_HEADER);
+      setEventDetails(DEFAULT_EVENT_DETAILS);
+      setSections(DEFAULT_SECTIONS);
+      setTaxRate(0);
+      setNotes('');
+      setLastSaved(null);
+      setIsRestoredFromDraft(false);
+    }
+
+    setLastRemoteEditor(null);
+
+    // Record switch in workspace activity
+    recordWorkspaceActivity({
+      workspaceId: activeWorkspaceId,
+      userId: myClientId,
+      action: 'SWITCH_FILE',
+      details: `Switched to file "${target?.name || 'Invoice'}"`,
+      fileId: targetFileId,
+      fileName: target?.name,
+    });
+
+    // Broadcast presence change immediately
+    broadcastPresenceHeartbeat({
+      workspaceId: activeWorkspaceId,
+      fileId: targetFileId,
+      userId: myClientId,
+      userLabel: getUserDisplayLabel(myClientId),
+    });
+  }, [activeFileId, activeWorkspaceId, header, eventDetails, sections, taxRate, notes, myClientId, loadInvoice]);
+
+  // Create a new file in workspace
+  const createNewFile = useCallback((draftData = null, customName = '') => {
+    const newFile = createWorkspaceFile(activeWorkspaceId, draftData, customName, getUserDisplayLabel(myClientId));
+    setWorkspaceFiles(getWorkspaceFiles(activeWorkspaceId));
+    setActiveFileIdState(newFile.id);
+
+    if (draftData) {
+      loadInvoice(draftData);
+    } else {
+      setHeader(DEFAULT_HEADER);
+      setEventDetails(DEFAULT_EVENT_DETAILS);
+      setSections(DEFAULT_SECTIONS);
+      setTaxRate(0);
+      setNotes('');
+      setLastSaved(null);
+      setIsRestoredFromDraft(false);
+    }
+
+    recordWorkspaceActivity({
+      workspaceId: activeWorkspaceId,
+      userId: myClientId,
+      action: 'CREATE_FILE',
+      details: `Created new invoice file "${newFile.name}"`,
+      fileId: newFile.id,
+      fileName: newFile.name,
+    });
+
+    return newFile;
+  }, [activeWorkspaceId, myClientId, loadInvoice]);
+
+  // Duplicate current active file
+  const duplicateCurrentFile = useCallback(() => {
+    const newFile = storeDuplicateWorkspaceFile(activeWorkspaceId, activeFileId, getUserDisplayLabel(myClientId));
+    if (newFile) {
+      setWorkspaceFiles(getWorkspaceFiles(activeWorkspaceId));
+      setActiveFileIdState(newFile.id);
+      if (newFile.draft) {
+        loadInvoice(newFile.draft);
+      }
+      recordWorkspaceActivity({
+        workspaceId: activeWorkspaceId,
+        userId: myClientId,
+        action: 'DUPLICATE_FILE',
+        details: `Duplicated file to create "${newFile.name}"`,
+        fileId: newFile.id,
+        fileName: newFile.name,
+      });
+    }
+    return newFile;
+  }, [activeWorkspaceId, activeFileId, myClientId, loadInvoice]);
+
+  // Rename a workspace file
+  const renameFile = useCallback((fileId, newName) => {
+    storeRenameWorkspaceFile(activeWorkspaceId, fileId, newName, getUserDisplayLabel(myClientId));
+    setWorkspaceFiles(getWorkspaceFiles(activeWorkspaceId));
+  }, [activeWorkspaceId, myClientId]);
+
+  // Delete a workspace file
+  const deleteFile = useCallback((fileId) => {
+    const files = getWorkspaceFiles(activeWorkspaceId);
+    const target = files.find((f) => f.id === fileId);
+    storeDeleteWorkspaceFile(activeWorkspaceId, fileId);
+
+    const updatedFiles = getWorkspaceFiles(activeWorkspaceId);
+    setWorkspaceFiles(updatedFiles);
+
+    if (activeFileId === fileId) {
+      const nextActiveId = getActiveFileId(activeWorkspaceId);
+      setActiveFileIdState(nextActiveId);
+      const nextActive = updatedFiles.find((f) => f.id === nextActiveId);
+      if (nextActive && nextActive.draft) {
+        loadInvoice(nextActive.draft);
+      } else {
+        setHeader(DEFAULT_HEADER);
+        setEventDetails(DEFAULT_EVENT_DETAILS);
+        setSections(DEFAULT_SECTIONS);
+        setTaxRate(0);
+        setNotes('');
+        setLastSaved(null);
+        setIsRestoredFromDraft(false);
+      }
+    }
+
+    recordWorkspaceActivity({
+      workspaceId: activeWorkspaceId,
+      userId: myClientId,
+      action: 'DELETE_FILE',
+      details: `Deleted file "${target?.name || 'Invoice'}"`,
+      fileId,
+    });
+  }, [activeWorkspaceId, activeFileId, myClientId, loadInvoice]);
+
+  // Auto-save & live broadcast for active file
   useEffect(() => {
     if (isIncomingRemoteUpdate.current) {
       isIncomingRemoteUpdate.current = false;
@@ -196,14 +366,16 @@ export function useInvoice() {
         notes,
         updatedAt: now.toISOString(),
       };
+
       if (hasMeaningfulData(draftData)) {
-        localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData));
+        updateWorkspaceFileDraft(activeWorkspaceId, activeFileId, draftData, getUserDisplayLabel(myClientId));
         setLastSaved(now);
 
-        // Broadcast to shared team workspace peers
+        // Broadcast to peers working on this same file in shared workspace
         if (isSharedWorkspace) {
           broadcastLiveDraftUpdate({
             workspaceId: activeWorkspaceId,
+            fileId: activeFileId,
             userId: myClientId,
             userLabel: getUserDisplayLabel(myClientId),
             draft: draftData,
@@ -212,11 +384,11 @@ export function useInvoice() {
         }
       }
     } catch (e) {
-      console.warn('Auto-save to localStorage failed:', e);
+      console.warn('Auto-save failed:', e);
     }
-  }, [header, eventDetails, sections, taxRate, notes, isSharedWorkspace, activeWorkspaceId, myClientId]);
+  }, [header, eventDetails, sections, taxRate, notes, isSharedWorkspace, activeWorkspaceId, activeFileId, myClientId]);
 
-  // Subscribe to real-time live remote draft updates from team members
+  // Subscribe to real-time live remote draft updates for the active file
   useEffect(() => {
     if (!isSharedWorkspace) {
       setLastRemoteEditor(null);
@@ -225,8 +397,9 @@ export function useInvoice() {
 
     const unsubscribe = subscribeToLiveWorkspaceSync(
       activeWorkspaceId,
+      activeFileId,
       (remoteUpdate) => {
-        if (shouldApplyRemoteDraft(remoteUpdate, lastSavedRef.current?.toISOString(), myClientId)) {
+        if (shouldApplyRemoteDraft(remoteUpdate, lastSavedRef.current?.toISOString(), myClientId, activeFileId)) {
           isIncomingRemoteUpdate.current = true;
           loadInvoice(remoteUpdate.draft);
           setLastRemoteEditor(remoteUpdate.userLabel || 'Team Member');
@@ -239,15 +412,47 @@ export function useInvoice() {
     );
 
     return () => unsubscribe();
-  }, [activeWorkspaceId, isSharedWorkspace, myClientId, loadInvoice]);
+  }, [activeWorkspaceId, activeFileId, isSharedWorkspace, myClientId, loadInvoice]);
 
-  // Reset form to blank defaults and clear saved draft
+  // Heartbeat presence in active file
+  useEffect(() => {
+    if (!isSharedWorkspace) return;
+
+    broadcastPresenceHeartbeat({
+      workspaceId: activeWorkspaceId,
+      fileId: activeFileId,
+      userId: myClientId,
+      userLabel: getUserDisplayLabel(myClientId),
+    });
+
+    const interval = setInterval(() => {
+      broadcastPresenceHeartbeat({
+        workspaceId: activeWorkspaceId,
+        fileId: activeFileId,
+        userId: myClientId,
+        userLabel: getUserDisplayLabel(myClientId),
+      });
+    }, 6000);
+
+    const unsubPresence = subscribeToWorkspacePresence(
+      activeWorkspaceId,
+      (presence) => {
+        setPresenceList((prev) => {
+          const filtered = prev.filter((p) => p.userId !== presence.userId);
+          return [...filtered, presence];
+        });
+      },
+      myClientId
+    );
+
+    return () => {
+      clearInterval(interval);
+      unsubPresence();
+    };
+  }, [activeWorkspaceId, activeFileId, isSharedWorkspace, myClientId]);
+
+  // Reset current invoice form
   const resetInvoice = useCallback(() => {
-    try {
-      localStorage.removeItem(DRAFT_STORAGE_KEY);
-    } catch (e) {
-      console.warn('Failed to clear draft:', e);
-    }
     setHeader(DEFAULT_HEADER);
     setEventDetails(DEFAULT_EVENT_DETAILS);
     setSections(DEFAULT_SECTIONS);
@@ -255,16 +460,13 @@ export function useInvoice() {
     setNotes('');
     setLastSaved(null);
     setIsRestoredFromDraft(false);
-  }, []);
+
+    updateWorkspaceFileDraft(activeWorkspaceId, activeFileId, null, getUserDisplayLabel(myClientId));
+  }, [activeWorkspaceId, activeFileId, myClientId]);
 
   const clearDraft = useCallback(() => {
-    try {
-      localStorage.removeItem(DRAFT_STORAGE_KEY);
-      setLastSaved(null);
-    } catch (e) {
-      console.warn('Failed to clear draft:', e);
-    }
-  }, []);
+    resetInvoice();
+  }, [resetInvoice]);
 
   const updateHeader = useCallback((field, value) => {
     setHeader((prev) => ({ ...prev, [field]: value }));
@@ -298,8 +500,9 @@ export function useInvoice() {
       userId: getClientId(),
       action: 'ADD_SECTION',
       details: `Added new section "${formattedTitle}"`,
+      fileId: activeFileId,
     });
-  }, []);
+  }, [activeFileId]);
 
   const removeSection = useCallback((sectionId) => {
     setSections((prev) => {
@@ -310,10 +513,11 @@ export function useInvoice() {
         userId: getClientId(),
         action: 'REMOVE_SECTION',
         details: `Removed section "${target?.title || 'Section'}"`,
+        fileId: activeFileId,
       });
       return prev.filter((s) => s.id !== sectionId);
     });
-  }, []);
+  }, [activeFileId]);
 
   const updateSectionTitle = useCallback((sectionId, title) => {
     setSections((prev) =>
@@ -331,6 +535,7 @@ export function useInvoice() {
             userId: getClientId(),
             action: 'ADD_ITEM',
             details: `Added a new line item to "${s.title}"`,
+            fileId: activeFileId,
           });
           return {
             ...s,
@@ -343,7 +548,7 @@ export function useInvoice() {
         return s;
       })
     );
-  }, []);
+  }, [activeFileId]);
 
   const removeItem = useCallback((sectionId, itemId) => {
     setSections((prev) =>
@@ -355,6 +560,7 @@ export function useInvoice() {
             userId: getClientId(),
             action: 'REMOVE_ITEM',
             details: `Removed a line item from "${s.title}"`,
+            fileId: activeFileId,
           });
           return {
             ...s,
@@ -364,7 +570,7 @@ export function useInvoice() {
         return s;
       })
     );
-  }, []);
+  }, [activeFileId]);
 
   const updateItem = useCallback((sectionId, itemId, field, value) => {
     setSections((prev) =>
@@ -478,5 +684,15 @@ export function useInvoice() {
     setIsRestoredFromDraft,
     lastRemoteEditor,
     isSharedWorkspace,
+    // Multi-file workspace capabilities
+    activeFile,
+    activeFileId,
+    workspaceFiles,
+    presenceList,
+    switchFile,
+    createNewFile,
+    duplicateCurrentFile,
+    renameFile,
+    deleteFile,
   };
 }

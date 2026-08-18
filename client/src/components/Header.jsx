@@ -8,7 +8,14 @@ import { useToast } from './ui/Toast';
 
 import WorkspaceActivityFeed from './ui/WorkspaceActivityFeed';
 
-export default function Header({ onExportPdf, onExportXlsx, onAddSection, onResetInvoice, lastSaved }) {
+export default function Header({
+  onExportPdf,
+  onExportXlsx,
+  onAddSection,
+  onResetInvoice,
+  lastSaved,
+  activeFileName,
+}) {
   const location = useLocation();
   const currentPath = location.pathname;
   const [isMenuOpen, setIsMenuOpen] = useState(false);

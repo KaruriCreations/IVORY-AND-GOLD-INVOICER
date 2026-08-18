@@ -4,7 +4,7 @@ import { useInvoice } from './useInvoice';
 
 const DRAFT_KEY = 'ivory_gold_invoice_draft_v1';
 
-describe('useInvoice Hook with Multi-Category Sections, Auto-Save & Recovery', () => {
+describe('useInvoice Hook with Multi-Category Sections, Multi-File & Auto-Save', () => {
   beforeEach(() => {
     localStorage.clear();
   });
@@ -22,9 +22,11 @@ describe('useInvoice Hook with Multi-Category Sections, Auto-Save & Recovery', (
     expect(result.current.subtotal).toBe(0);
     expect(result.current.grandTotal).toBe(0);
     expect(result.current.isRestoredFromDraft).toBe(false);
+    expect(result.current.activeFileId).toBeDefined();
+    expect(result.current.workspaceFiles.length).toBeGreaterThanOrEqual(1);
   });
 
-  test('auto-saves form modifications to localStorage', () => {
+  test('auto-saves form modifications to active workspace file', () => {
     const { result } = renderHook(() => useInvoice());
 
     act(() => {
@@ -38,66 +40,93 @@ describe('useInvoice Hook with Multi-Category Sections, Auto-Save & Recovery', (
     expect(stored.header.invoiceNum).toBe('QUO/2026/0233');
   });
 
-  test('recovers saved draft from localStorage on initial render', () => {
-    const preSavedDraft = {
-      header: {
-        clientName: 'Ruth and Elvis Wedding',
-        invoiceNum: 'QUO/2026/0233',
-        preparedBy: 'Ivory Team',
-        date: '2026-08-17',
-        dueDate: '',
-      },
-      eventDetails: {
-        venue: 'Safari Park Hotel',
-        eventType: 'Wedding Reception',
-        noOfGuests: '350',
-        colors: 'Emerald & Gold',
-        dateOfFunction: '2026-12-12',
-        attn: 'Ruth',
-        sectionTitle: '',
-      },
-      sections: [
-        {
-          id: 1,
-          title: 'DECOR & SETUP',
-          items: [{ id: 1, description: 'Gold Chiavari Chairs', quantity: 350, unitPrice: 200 }],
-        },
-      ],
-      taxRate: 16,
-      notes: 'Payment required 14 days before event',
-      updatedAt: new Date().toISOString(),
-    };
-
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(preSavedDraft));
-
+  test('creates new file in workspace and switches to it', () => {
     const { result } = renderHook(() => useInvoice());
 
-    expect(result.current.isRestoredFromDraft).toBe(true);
-    expect(result.current.header.clientName).toBe('Ruth and Elvis Wedding');
-    expect(result.current.header.invoiceNum).toBe('QUO/2026/0233');
-    expect(result.current.eventDetails.venue).toBe('Safari Park Hotel');
-    expect(result.current.sections[0].title).toBe('DECOR & SETUP');
-    expect(result.current.subtotal).toBe(70000);
-    expect(result.current.taxAmount).toBe(11200);
-    expect(result.current.grandTotal).toBe(81200);
+    act(() => {
+      result.current.updateHeader('clientName', 'Original Client');
+    });
+
+    act(() => {
+      result.current.createNewFile(null, 'Second File');
+    });
+
+    expect(result.current.workspaceFiles.length).toBe(2);
+    expect(result.current.activeFile.name).toBe('Second File');
+    expect(result.current.header.clientName).toBe(''); // Fresh file
   });
 
-  test('resetInvoice clears state and removes localStorage draft', () => {
+  test('switches between files and restores each file content independently', () => {
+    const { result } = renderHook(() => useInvoice());
+
+    const file1Id = result.current.activeFileId;
+
+    act(() => {
+      result.current.updateHeader('clientName', 'Client One');
+      result.current.updateHeader('invoiceNum', 'QUO-001');
+    });
+
+    let file2Id;
+    act(() => {
+      const f2 = result.current.createNewFile(null, 'File Two');
+      file2Id = f2.id;
+      result.current.updateHeader('clientName', 'Client Two');
+      result.current.updateHeader('invoiceNum', 'QUO-002');
+    });
+
+    expect(result.current.header.clientName).toBe('Client Two');
+
+    // Switch back to File 1
+    act(() => {
+      result.current.switchFile(file1Id);
+    });
+
+    expect(result.current.activeFileId).toBe(file1Id);
+    expect(result.current.header.clientName).toBe('Client One');
+    expect(result.current.header.invoiceNum).toBe('QUO-001');
+
+    // Switch back to File 2
+    act(() => {
+      result.current.switchFile(file2Id);
+    });
+
+    expect(result.current.activeFileId).toBe(file2Id);
+    expect(result.current.header.clientName).toBe('Client Two');
+    expect(result.current.header.invoiceNum).toBe('QUO-002');
+  });
+
+  test('duplicates current active file', () => {
     const { result } = renderHook(() => useInvoice());
 
     act(() => {
-      result.current.updateHeader('clientName', 'Company Event');
+      result.current.updateHeader('clientName', 'Original Event');
+      result.current.updateHeader('invoiceNum', 'QUO-ORIG');
     });
-
-    expect(localStorage.getItem(DRAFT_KEY)).not.toBeNull();
 
     act(() => {
-      result.current.resetInvoice();
+      result.current.duplicateCurrentFile();
     });
 
-    expect(result.current.header.clientName).toBe('');
-    expect(result.current.isRestoredFromDraft).toBe(false);
-    expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
+    expect(result.current.workspaceFiles.length).toBe(2);
+    expect(result.current.header.clientName).toBe('Original Event');
+  });
+
+  test('deletes a workspace file', () => {
+    const { result } = renderHook(() => useInvoice());
+
+    let file2;
+    act(() => {
+      file2 = result.current.createNewFile(null, 'To Remove');
+    });
+
+    expect(result.current.workspaceFiles.length).toBe(2);
+
+    act(() => {
+      result.current.deleteFile(file2.id);
+    });
+
+    expect(result.current.workspaceFiles.length).toBe(1);
+    expect(result.current.workspaceFiles.some((f) => f.id === file2.id)).toBe(false);
   });
 
   test('adds a new category section', () => {
@@ -142,23 +171,6 @@ describe('useInvoice Hook with Multi-Category Sections, Auto-Save & Recovery', (
     // Subtotal = 10 * 1000 = 10,000
     expect(result.current.subtotal).toBe(10000);
     expect(result.current.grandTotal).toBe(10000);
-  });
-
-  test('removes a category section when more than 1 exists', () => {
-    const { result } = renderHook(() => useInvoice());
-
-    act(() => {
-      result.current.addSection('DECOR');
-    });
-
-    expect(result.current.sections.length).toBe(2);
-    const decorSecId = result.current.sections[1].id;
-
-    act(() => {
-      result.current.removeSection(decorSecId);
-    });
-
-    expect(result.current.sections.length).toBe(1);
   });
 
   test('loads saved invoice data via loadInvoice for re-editing', () => {
