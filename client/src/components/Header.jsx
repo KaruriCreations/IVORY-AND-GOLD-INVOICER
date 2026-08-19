@@ -28,6 +28,13 @@ export default function Header({
 
   useEffect(() => {
     setCurrentWs(getWorkspaceId());
+    const handleWsChanged = (e) => {
+      setCurrentWs(e?.detail?.workspaceId || getWorkspaceId());
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('workspace-changed', handleWsChanged);
+      return () => window.removeEventListener('workspace-changed', handleWsChanged);
+    }
   }, [location.pathname]);
 
   const handleSaveWs = (e) => {

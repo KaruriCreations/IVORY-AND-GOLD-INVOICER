@@ -104,6 +104,8 @@ export function createDefaultFile(id = 'doc_main', name = 'Primary Invoice', dra
  */
 export function getWorkspaceFiles(workspaceId) {
   const ws = workspaceId || getWorkspaceId();
+  const myClientId = getClientId();
+  const isPrivateWs = ws === myClientId || ws.startsWith('user_');
   try {
     const storageKey = `${WS_FILES_PREFIX}${ws}`;
     const raw = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null;
@@ -114,9 +116,9 @@ export function getWorkspaceFiles(workspaceId) {
       }
     }
 
-    // Auto-migrate legacy draft if present
+    // Auto-migrate legacy draft only for private workspace if present
     let initialDraft = null;
-    if (typeof window !== 'undefined') {
+    if (isPrivateWs && typeof window !== 'undefined') {
       const legacyRaw = localStorage.getItem(LEGACY_DRAFT_KEY);
       if (legacyRaw) {
         try {
@@ -337,6 +339,7 @@ export function createWorkspaceFile(workspaceId, initialDraft = null, customName
 export function updateWorkspaceFileDraft(workspaceId, fileId, draftData, userLabel = '') {
   const ws = workspaceId || getWorkspaceId();
   const myId = getClientId();
+  const isPrivateWs = ws === myId || ws.startsWith('user_');
   const author = userLabel || getUserDisplayLabel(myId);
   const files = getWorkspaceFiles(ws);
 
@@ -377,10 +380,14 @@ export function updateWorkspaceFileDraft(workspaceId, fileId, draftData, userLab
 
   persistFiles(ws, files);
 
-  // If this is the active file, keep legacy key in sync for safety
-  if (fileId === getActiveFileId(ws) && typeof window !== 'undefined') {
+  // Only sync to legacy key if editing in private individual session
+  if (isPrivateWs && fileId === getActiveFileId(ws) && typeof window !== 'undefined') {
     try {
-      localStorage.setItem(LEGACY_DRAFT_KEY, JSON.stringify(draftData));
+      if (draftData) {
+        localStorage.setItem(LEGACY_DRAFT_KEY, JSON.stringify(draftData));
+      } else {
+        localStorage.removeItem(LEGACY_DRAFT_KEY);
+      }
     } catch {
       // ignore
     }
@@ -505,10 +512,88 @@ export function subscribeToWorkspaceFiles(workspaceId, callback) {
   // Initial sync with server in background
   syncWorkspaceFilesWithServer(ws).catch(() => {});
 
-  return () => {
+    return () => {
     set.delete(callback);
     if (set.size === 0) {
       listeners.delete(ws);
     }
   };
+}
+
+/**
+ * Check if draft contains meaningful data entered by a user
+ */
+export function hasMeaningfulDraftData(draft) {
+  if (!draft || typeof draft !== 'object') return false;
+  const clientName = draft.header?.clientName?.trim() || '';
+  const invoiceNum = draft.header?.invoiceNum?.trim() || '';
+  const preparedBy = draft.header?.preparedBy?.trim() || '';
+  const sections = draft.sections || [];
+  const items = sections.flatMap((s) => s.items || []);
+  const validItems = items.filter((i) => i.description?.trim() || Number(i.quantity) > 0 || Number(i.unitPrice) > 0);
+  const notes = draft.notes?.trim() || '';
+  const eventVenue = draft.eventDetails?.venue?.trim() || '';
+  const eventType = draft.eventDetails?.eventType?.trim() || '';
+
+  return Boolean(clientName || invoiceNum || preparedBy || validItems.length > 0 || notes || eventVenue || eventType);
+}
+
+/**
+ * Get structured active draft info scoped strictly to a given workspace.
+ * Returns null if no active draft exists or if the draft is blank.
+ */
+export function getActiveWorkspaceDraftInfo(workspaceId) {
+  const ws = workspaceId || getWorkspaceId();
+  try {
+    const activeFile = getActiveWorkspaceFile(ws);
+    const draft = activeFile?.draft;
+
+    if (!draft || !hasMeaningfulDraftData(draft)) {
+      return null;
+    }
+
+    const clientName = draft.header?.clientName?.trim() || '';
+    const invoiceNum = draft.header?.invoiceNum?.trim() || '';
+    const sections = draft.sections || [];
+    const items = sections.flatMap((s) => s.items || []);
+    const validItems = items.filter((i) => i.description?.trim() || Number(i.quantity) > 0 || Number(i.unitPrice) > 0);
+
+    const subtotal = validItems.reduce((acc, i) => acc + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0);
+    const taxRate = Number(draft.taxRate) || 0;
+    const grandTotal = Math.round((subtotal + subtotal * (taxRate / 100)) * 100) / 100;
+
+    return {
+      workspaceId: ws,
+      fileId: activeFile.id,
+      fileName: activeFile.name,
+      clientName: clientName || 'Untitled Client',
+      invoiceNum: invoiceNum || 'Draft Invoice',
+      itemCount: validItems.length,
+      grandTotal,
+      updatedAt: draft.updatedAt || activeFile.updatedAt,
+      draftData: draft,
+    };
+  } catch (err) {
+    console.warn('Failed to get active workspace draft info:', err);
+    return null;
+  }
+}
+
+/**
+ * Clear/reset the active draft for a workspace
+ */
+export function clearActiveWorkspaceDraft(workspaceId) {
+  const ws = workspaceId || getWorkspaceId();
+  const activeId = getActiveFileId(ws);
+  const updated = updateWorkspaceFileDraft(ws, activeId, null);
+
+  const myClientId = getClientId();
+  if (ws === myClientId || ws.startsWith('user_')) {
+    try {
+      localStorage.removeItem(LEGACY_DRAFT_KEY);
+    } catch {
+      // ignore
+    }
+  }
+  return updated;
 }

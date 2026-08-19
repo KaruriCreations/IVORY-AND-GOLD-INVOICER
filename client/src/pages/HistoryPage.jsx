@@ -16,49 +16,20 @@ import {
   setWorkspaceId,
   getClientId,
 } from '../services/historyStore';
-import { importInvoiceToWorkspace } from '../services/workspaceFilesStore';
+import {
+  importInvoiceToWorkspace,
+  getActiveWorkspaceDraftInfo,
+  clearActiveWorkspaceDraft,
+} from '../services/workspaceFilesStore';
 import { generateDocument } from '../services/api';
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-
-function getActiveDraftInfo() {
-  try {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem('ivory_gold_invoice_draft_v1') : null;
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return null;
-
-    const clientName = parsed.header?.clientName?.trim() || '';
-    const invoiceNum = parsed.header?.invoiceNum?.trim() || '';
-    const sections = parsed.sections || [];
-    const items = sections.flatMap((s) => s.items || []);
-    const validItems = items.filter((i) => i.description?.trim() || Number(i.quantity) > 0 || Number(i.unitPrice) > 0);
-
-    const hasData = Boolean(clientName || invoiceNum || validItems.length > 0 || parsed.notes?.trim());
-    if (!hasData) return null;
-
-    const subtotal = validItems.reduce((acc, i) => acc + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0);
-    const taxRate = Number(parsed.taxRate) || 0;
-    const grandTotal = Math.round((subtotal + subtotal * (taxRate / 100)) * 100) / 100;
-
-    return {
-      clientName: clientName || 'Untitled Client',
-      invoiceNum: invoiceNum || 'Draft Invoice',
-      itemCount: validItems.length,
-      grandTotal,
-      updatedAt: parsed.updatedAt,
-      draftData: parsed,
-    };
-  } catch {
-    return null;
-  }
-}
 
 export default function HistoryPage() {
   const [activeWorkspace, setActiveWorkspace] = useState(() => getWorkspaceId());
   const [isWorkspaceModalOpen, setIsWorkspaceModalOpen] = useState(false);
   const [workspaceInput, setWorkspaceInput] = useState('');
-  const [activeDraftInfo, setActiveDraftInfo] = useState(() => getActiveDraftInfo());
+  const [activeDraftInfo, setActiveDraftInfo] = useState(() => getActiveWorkspaceDraftInfo(getWorkspaceId()));
   const [files, setFiles] = useState(() => getLocalHistory(getWorkspaceId()));
   const [loading, setLoading] = useState(() => getLocalHistory(getWorkspaceId()).length === 0);
   const [downloadingFile, setDownloadingFile] = useState(null);
@@ -110,8 +81,22 @@ export default function HistoryPage() {
   };
 
   useEffect(() => {
+    setActiveDraftInfo(getActiveWorkspaceDraftInfo(activeWorkspace));
     fetchHistory();
   }, [activeWorkspace]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const handleWsChanged = (e) => {
+      const nextWs = e?.detail?.workspaceId || getWorkspaceId();
+      setActiveWorkspace(nextWs);
+      setActiveDraftInfo(getActiveWorkspaceDraftInfo(nextWs));
+      setFiles(getLocalHistory(nextWs));
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('workspace-changed', handleWsChanged);
+      return () => window.removeEventListener('workspace-changed', handleWsChanged);
+    }
+  }, []);
 
   const handleSaveWorkspace = (e) => {
     e.preventDefault();
@@ -119,6 +104,7 @@ export default function HistoryPage() {
     setWorkspaceId(clean);
     const newWs = getWorkspaceId();
     setActiveWorkspace(newWs);
+    setActiveDraftInfo(getActiveWorkspaceDraftInfo(newWs));
     setFiles(getLocalHistory(newWs));
     setIsWorkspaceModalOpen(false);
     toast.gold(
@@ -425,6 +411,22 @@ export default function HistoryPage() {
                 </div>
 
                 <div className="flex items-center gap-2 w-full md:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('Are you sure you want to discard this active invoice draft?')) {
+                        clearActiveWorkspaceDraft(activeWorkspace);
+                        setActiveDraftInfo(null);
+                        toast.info('Draft Discarded', 'Cleared active invoice draft from workspace.');
+                      }
+                    }}
+                    className="p-2.5 text-on-surface-variant hover:text-error hover:bg-error/10 border border-outline-variant/30 rounded-xl transition-all flex items-center justify-center gap-1 text-xs font-semibold"
+                    title="Discard this draft session"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">delete_outline</span>
+                    <span className="md:hidden">Discard</span>
+                  </button>
+
                   <MagneticHoverButton
                     onClick={(e) => {
                       triggerSparkle(e);
