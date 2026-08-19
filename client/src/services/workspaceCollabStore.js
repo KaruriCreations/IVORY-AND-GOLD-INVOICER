@@ -42,6 +42,13 @@ export function setUserDisplayName(name) {
   }
 }
 
+let lastActivityTime = 0;
+function getMonotonicTimestamp() {
+  const now = Date.now();
+  lastActivityTime = Math.max(now, lastActivityTime + 1);
+  return new Date(lastActivityTime).toISOString();
+}
+
 /**
  * Record a collaborative activity (only active for shared workspaces)
  */
@@ -65,7 +72,7 @@ export function recordWorkspaceActivity({
     userLabel: finalUserLabel,
     action: action || 'EDIT',
     details: details || 'Made changes to invoice',
-    timestamp: new Date().toISOString(),
+    timestamp: getMonotonicTimestamp(),
   };
 
   try {
@@ -117,6 +124,57 @@ export function getWorkspaceActivities(workspaceId) {
   return [];
 }
 
+const LAST_VIEWED_PREFIX = 'ivory_gold_collab_last_viewed_v1_';
+
+/**
+ * Get the timestamp when the user last viewed the workspace feed
+ */
+export function getWorkspaceLastViewedTime(workspaceId) {
+  if (!workspaceId) return null;
+  try {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem(`${LAST_VIEWED_PREFIX}${workspaceId}`);
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/**
+ * Mark all current workspace activities as viewed/read (resets notification count to 0)
+ */
+export function markWorkspaceActivitiesAsRead(workspaceId) {
+  if (!workspaceId) return new Date().toISOString();
+  const activities = getWorkspaceActivities(workspaceId);
+  const now = activities.length > 0 ? activities[0].timestamp : new Date().toISOString();
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`${LAST_VIEWED_PREFIX}${workspaceId}`, now);
+    }
+  } catch {
+    // ignore
+  }
+  return now;
+}
+
+/**
+ * Get count of unread workspace activities since user last viewed the feed
+ */
+export function getUnreadActivitiesCount(workspaceId) {
+  if (!workspaceId || workspaceId.startsWith('user_')) return 0;
+  const activities = getWorkspaceActivities(workspaceId);
+  if (activities.length === 0) return 0;
+
+  const lastViewed = getWorkspaceLastViewedTime(workspaceId);
+  if (!lastViewed) {
+    return activities.length;
+  }
+
+  const lastViewedTime = new Date(lastViewed).getTime();
+  return activities.filter((act) => new Date(act.timestamp).getTime() > lastViewedTime).length;
+}
+
 /**
  * Clear activity history for a workspace
  */
@@ -125,8 +183,21 @@ export function clearWorkspaceActivities(workspaceId) {
   try {
     const storageKey = `${COLLAB_STORAGE_PREFIX}${workspaceId}`;
     localStorage.removeItem(storageKey);
+    markWorkspaceActivitiesAsRead(workspaceId);
   } catch (err) {
     console.warn('Failed to clear workspace activities:', err);
+  }
+
+  // Notify active listeners with clear event
+  const workspaceListeners = listeners.get(workspaceId);
+  if (workspaceListeners) {
+    workspaceListeners.forEach((callback) => {
+      try {
+        callback({ type: 'CLEAR_ACTIVITIES', workspaceId });
+      } catch (cbErr) {
+        console.warn('Workspace subscriber error:', cbErr);
+      }
+    });
   }
 }
 
@@ -151,3 +222,4 @@ export function subscribeToWorkspaceActivity(workspaceId, callback) {
     }
   };
 }
+

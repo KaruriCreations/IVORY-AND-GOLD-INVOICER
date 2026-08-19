@@ -6,6 +6,8 @@ import {
   subscribeToWorkspaceActivity,
   getUserDisplayLabel,
   setUserDisplayName,
+  getUnreadActivitiesCount,
+  markWorkspaceActivitiesAsRead,
 } from './workspaceCollabStore';
 
 describe('workspaceCollabStore - TDD Suite for Workspace Activity & Collaboration', () => {
@@ -106,7 +108,10 @@ describe('workspaceCollabStore - TDD Suite for Workspace Activity & Collaboratio
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  test('clears activities for a workspace', () => {
+  test('clears activities for a workspace and notifies subscribers', () => {
+    const listener = vi.fn();
+    subscribeToWorkspaceActivity('team-kenya', listener);
+
     recordWorkspaceActivity({
       workspaceId: 'team-kenya',
       userId: 'user_abc',
@@ -118,4 +123,47 @@ describe('workspaceCollabStore - TDD Suite for Workspace Activity & Collaboratio
     clearWorkspaceActivities('team-kenya');
     expect(getWorkspaceActivities('team-kenya').length).toBe(0);
   });
+
+  test('tracks unread activity count and resets to zero when marked as read', () => {
+    // 1. Initially unread count is 0
+    expect(getUnreadActivitiesCount('team-kenya')).toBe(0);
+
+    // 2. Someone logs an activity
+    recordWorkspaceActivity({
+      workspaceId: 'team-kenya',
+      userId: 'user_teammate',
+      userLabel: 'Sarah',
+      action: 'ADD_ITEM',
+      details: 'Added Floral Arch',
+    });
+
+    recordWorkspaceActivity({
+      workspaceId: 'team-kenya',
+      userId: 'user_teammate',
+      userLabel: 'Sarah',
+      action: 'ADD_ITEM',
+      details: 'Added Stage Lighting',
+    });
+
+    // 3. Unread count is 2
+    expect(getUnreadActivitiesCount('team-kenya')).toBe(2);
+
+    // 4. Mark as read
+    markWorkspaceActivitiesAsRead('team-kenya');
+
+    // 5. Unread count resets back to 0
+    expect(getUnreadActivitiesCount('team-kenya')).toBe(0);
+
+    // 6. Another activity arrives
+    recordWorkspaceActivity({
+      workspaceId: 'team-kenya',
+      userId: 'user_teammate',
+      userLabel: 'Sarah',
+      action: 'UPDATE_FIELD',
+      details: 'Updated Grand Total',
+    });
+
+    expect(getUnreadActivitiesCount('team-kenya')).toBe(1);
+  });
 });
+

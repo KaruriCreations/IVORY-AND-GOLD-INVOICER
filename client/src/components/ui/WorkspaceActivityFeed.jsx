@@ -1,18 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   getWorkspaceActivities,
   subscribeToWorkspaceActivity,
   getUserDisplayLabel,
   setUserDisplayName,
+  getUnreadActivitiesCount,
+  markWorkspaceActivitiesAsRead,
+  clearWorkspaceActivities,
 } from '../../services/workspaceCollabStore';
 import { getWorkspaceId, getClientId } from '../../services/historyStore';
 import { useToast } from './Toast';
 
 export default function WorkspaceActivityFeed() {
   const [activities, setActivities] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [isNameModalOpen, setIsNameModalOpen] = useState(false);
   const [nameInput, setNameInput] = useState('');
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
   const toast = useToast();
 
   const workspaceId = getWorkspaceId();
@@ -22,25 +28,58 @@ export default function WorkspaceActivityFeed() {
   useEffect(() => {
     if (!isShared) {
       setActivities([]);
+      setUnreadCount(0);
       return;
     }
 
     setActivities(getWorkspaceActivities(workspaceId));
+    setUnreadCount(getUnreadActivitiesCount(workspaceId));
 
-    const unsubscribe = subscribeToWorkspaceActivity(workspaceId, (newActivity) => {
-      setActivities((prev) => [newActivity, ...prev].slice(0, 40));
+    const unsubscribe = subscribeToWorkspaceActivity(workspaceId, (payload) => {
+      if (payload && payload.type === 'CLEAR_ACTIVITIES') {
+        setActivities([]);
+        setUnreadCount(0);
+        return;
+      }
+
+      setActivities((prev) => [payload, ...prev].slice(0, 40));
+
+      if (isOpenRef.current) {
+        markWorkspaceActivitiesAsRead(workspaceId);
+        setUnreadCount(0);
+      } else {
+        setUnreadCount((prev) => prev + 1);
+      }
 
       // If action was performed by another team member, show a live collaboration toast!
-      if (newActivity.userId !== myClientId) {
+      if (payload.userId !== myClientId) {
         toast.gold(
-          `${newActivity.userLabel} in Workspace`,
-          newActivity.details || 'Updated invoice details.'
+          `${payload.userLabel} in Workspace`,
+          payload.details || 'Updated invoice details.'
         );
       }
     });
 
     return () => unsubscribe();
   }, [workspaceId, isShared, myClientId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleToggleFeed = () => {
+    const next = !isOpen;
+    setIsOpen(next);
+    if (next) {
+      markWorkspaceActivitiesAsRead(workspaceId);
+      setUnreadCount(0);
+    }
+  };
+
+  const handleClearFeed = () => {
+    if (window.confirm('Clear all workspace activity history for this team?')) {
+      clearWorkspaceActivities(workspaceId);
+      setActivities([]);
+      setUnreadCount(0);
+      toast.info('Activity Feed Cleared', 'Workspace history has been cleared.');
+    }
+  };
 
   const handleSaveName = (e) => {
     e.preventDefault();
@@ -57,7 +96,7 @@ export default function WorkspaceActivityFeed() {
       <div className="relative inline-flex items-center">
         <button
           type="button"
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={handleToggleFeed}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 hover:bg-primary/20 border border-primary/30 text-xs font-semibold text-primary transition-all shadow-xs"
           title="View Live Workspace Team Activity Feed"
         >
@@ -67,9 +106,12 @@ export default function WorkspaceActivityFeed() {
           </span>
           <span className="material-symbols-outlined text-[15px]">group</span>
           <span>Live Workspace Feed</span>
-          {activities.length > 0 && (
-            <span className="ml-0.5 bg-primary text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
-              {activities.length}
+          {unreadCount > 0 && (
+            <span
+              data-testid="activity-unread-badge"
+              className="ml-0.5 bg-primary text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold"
+            >
+              {unreadCount}
             </span>
           )}
         </button>
@@ -84,12 +126,26 @@ export default function WorkspaceActivityFeed() {
                   Workspace: <span className="text-primary font-bold">{workspaceId}</span>
                 </span>
               </div>
-              <button
-                onClick={() => setIsOpen(false)}
-                className="text-on-surface-variant/60 hover:text-on-surface"
-              >
-                <span className="material-symbols-outlined text-[18px]">close</span>
-              </button>
+              <div className="flex items-center gap-1">
+                {activities.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearFeed}
+                    className="p-1 text-on-surface-variant/60 hover:text-error hover:bg-error/10 rounded-lg transition-colors"
+                    title="Clear all workspace activity history"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">delete_sweep</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  className="p-1 text-on-surface-variant/60 hover:text-on-surface rounded-lg transition-colors"
+                  title="Close activity feed"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </div>
             </div>
 
             <div className="flex items-center justify-between mb-3 text-xs">
